@@ -1,6 +1,6 @@
 import express from 'express';
-import { registerService, setupGracefulShutdown } from '../../shared/consul';
-import { healthRoute } from '../../shared/healthcheck';
+import { registerService, setupGracefulShutdown } from '../../shared/consul.js';
+import { healthRoute } from '../../shared/healthcheck.js';
 
 const app = express();
 const PORT = 3002;

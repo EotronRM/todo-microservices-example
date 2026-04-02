@@ -70,7 +70,11 @@ export async function discoverService(
     throw new Error(`[Consul] No healthy instances of ${name}`);
   }
 
-  const entry = entries[0];
+  // Pick a random healthy instance for basic load distribution
+  const entry = entries[Math.floor(Math.random() * entries.length)];
+  console.log(
+    `[Consul] Discovered ${name}: ${entry.Service.Address}:${entry.Service.Port} (${entries.length} healthy instance(s))`
+  );
   return {
     address: entry.Service.Address,
     port: entry.Service.Port,

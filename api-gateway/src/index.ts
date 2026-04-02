@@ -3,8 +3,8 @@ import {
   registerService,
   discoverService,
   setupGracefulShutdown,
-} from '../../shared/consul';
-import { healthRoute } from '../../shared/healthcheck';
+} from '../../shared/consul.js';
+import { healthRoute } from '../../shared/healthcheck.js';
 
 const app = express();
 const PORT = 3000;
@@ -41,6 +41,16 @@ app.get('/api/todos', async (_req, res) => {
   }
 });
 
+app.get('/api/todos/:id', async (req, res) => {
+  try {
+    const result = await proxy('todo-service', `/todos/${req.params.id}`);
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[Gateway]', (err as Error).message);
+    res.status(503).json({ error: 'todo-service unavailable' });
+  }
+});
+
 app.post('/api/todos', async (req, res) => {
   try {
     const result = await proxy('todo-service', '/todos', {
@@ -64,6 +74,40 @@ app.delete('/api/todos/:id', async (req, res) => {
   } catch (err) {
     console.error('[Gateway]', (err as Error).message);
     res.status(503).json({ error: 'todo-service unavailable' });
+  }
+});
+
+// --- Note card routes ---
+
+// Helper: proxy binary responses (images, files) instead of JSON
+async function proxyBinary(
+  serviceName: string,
+  path: string
+): Promise<{ status: number; contentType: string; body: Buffer }> {
+  const instance = await discoverService(serviceName);
+  const url = `http://${instance.address}:${instance.port}${path}`;
+  console.log(`[Gateway] Routing to ${serviceName} → ${url}`);
+
+  const res = await fetch(url);
+  const body = Buffer.from(await res.arrayBuffer());
+  return {
+    status: res.status,
+    contentType: res.headers.get('content-type') || 'application/octet-stream',
+    body,
+  };
+}
+
+app.get('/api/note-card/:todoId', async (req, res) => {
+  try {
+    const result = await proxyBinary(
+      'note-card-service',
+      `/note-card/${req.params.todoId}`
+    );
+    res.setHeader('Content-Type', result.contentType);
+    res.status(result.status).send(result.body);
+  } catch (err) {
+    console.error('[Gateway]', (err as Error).message);
+    res.status(503).json({ error: 'note-card-service unavailable' });
   }
 });
 

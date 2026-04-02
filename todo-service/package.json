@@ -1,18 +1,21 @@
 {
   "name": "todo-service",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "start": "node dist/todo-service/src/index.js",
+    "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^5.1.0",
+    "pg": "^8.13.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.0",
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.2",
-    "ts-node": "^10.9.2"
+    "@types/pg": "^8.11.0",
+    "typescript": "^6.0.0",
+    "tsx": "^4.7.0"
   }
 }

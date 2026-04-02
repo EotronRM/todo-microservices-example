@@ -1,10 +1,11 @@
 import express from 'express';
+import pg from 'pg';
 import {
   registerService,
   discoverService,
   setupGracefulShutdown,
-} from '../../shared/consul';
-import { healthRoute } from '../../shared/healthcheck';
+} from '../../shared/consul.js';
+import { healthRoute } from '../../shared/healthcheck.js';
 
 const app = express();
 const PORT = 3001;
@@ -17,14 +18,50 @@ interface Todo {
   completed: boolean;
 }
 
-let nextId = 1;
-const todos: Todo[] = [];
+const pool = new pg.Pool({
+  connectionString:
+    process.env.DATABASE_URL ||
+    'postgresql://postgres:postgres@localhost:5432/todos',
+});
+
+async function initDb(retries = 5): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS todos (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          completed BOOLEAN NOT NULL DEFAULT false
+        )
+      `);
+      console.log('[todo-service] Database initialized');
+      return;
+    } catch (err) {
+      console.log(
+        `[todo-service] DB not ready, retrying in 2s... (${i + 1}/${retries})`
+      );
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  throw new Error('[todo-service] Failed to connect to database');
+}
 
 app.use(express.json());
 app.use(healthRoute(SERVICE_NAME));
 
-app.get('/todos', (_req, res) => {
-  res.json(todos);
+app.get('/todos', async (_req, res) => {
+  const result = await pool.query('SELECT * FROM todos ORDER BY id');
+  res.json(result.rows);
+});
+
+app.get('/todos/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const result = await pool.query('SELECT * FROM todos WHERE id = $1', [id]);
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'Todo not found' });
+    return;
+  }
+  res.json(result.rows[0]);
 });
 
 app.post('/todos', async (req, res) => {
@@ -34,8 +71,11 @@ app.post('/todos', async (req, res) => {
     return;
   }
 
-  const todo: Todo = { id: nextId++, title, completed: false };
-  todos.push(todo);
+  const result = await pool.query(
+    'INSERT INTO todos (title, completed) VALUES ($1, false) RETURNING *',
+    [title]
+  );
+  const todo: Todo = result.rows[0];
 
   // Discover notification-service via Consul and send a notification
   try {
@@ -53,19 +93,22 @@ app.post('/todos', async (req, res) => {
   res.status(201).json(todo);
 });
 
-app.delete('/todos/:id', (req, res) => {
+app.delete('/todos/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const index = todos.findIndex((t) => t.id === id);
-  if (index === -1) {
+  const result = await pool.query(
+    'DELETE FROM todos WHERE id = $1 RETURNING *',
+    [id]
+  );
+  if (result.rows.length === 0) {
     res.status(404).json({ error: 'Todo not found' });
     return;
   }
-  const [deleted] = todos.splice(index, 1);
-  res.json(deleted);
+  res.json(result.rows[0]);
 });
 
 app.listen(PORT, async () => {
   console.log(`${SERVICE_NAME} running on port ${PORT}`);
+  await initDb();
   await registerService(SERVICE_NAME, SERVICE_ADDRESS, PORT);
   setupGracefulShutdown(SERVICE_NAME, PORT);
 });

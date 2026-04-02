@@ -1,4 +1,13 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=todos
+    ports:
+      - "5432:5432"
+
   consul:
     image: hashicorp/consul:1.15
     command: agent -dev -client=0.0.0.0
@@ -26,8 +35,10 @@ services:
     environment:
       - CONSUL_HOST=consul
       - SERVICE_ADDRESS=todo-service
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/todos
     depends_on:
       - consul
+      - postgres
 
   user-service:
     build:
@@ -50,5 +61,33 @@ services:
     environment:
       - CONSUL_HOST=consul
       - SERVICE_ADDRESS=notification-service
+    depends_on:
+      - consul
+
+  note-card-service-1:
+    build:
+      context: .
+      dockerfile: note-card-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - CONSUL_HOST=consul
+      - SERVICE_ADDRESS=note-card-service-1
+      - PORT=3004
+      - INSTANCE_ID=1
+    depends_on:
+      - consul
+
+  note-card-service-2:
+    build:
+      context: .
+      dockerfile: note-card-service/Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - CONSUL_HOST=consul
+      - SERVICE_ADDRESS=note-card-service-2
+      - PORT=3005
+      - INSTANCE_ID=2
     depends_on:
       - consul

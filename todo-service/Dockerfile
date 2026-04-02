@@ -12,6 +12,6 @@ RUN npm install
 # Symlink node_modules to parent so shared/ code can resolve express types
 RUN ln -s /app/todo-service/node_modules /app/node_modules
 
-RUN npx tsc --outDir dist --rootDir .. --esModuleInterop --resolveJsonModule --skipLibCheck --module commonjs --target ES2022
+RUN npx tsc
 
 CMD ["node", "dist/todo-service/src/index.js"]
