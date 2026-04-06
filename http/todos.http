@@ -1,0 +1,26 @@
+@baseUrl = http://localhost:3000
+
+### Create a todo
+POST {{baseUrl}}/api/todos
+Content-Type: application/json
+
+{
+  "title": "Buy groceries"
+}
+
+### Create another todo
+POST {{baseUrl}}/api/todos
+Content-Type: application/json
+
+{
+  "title": "Finish homework"
+}
+
+### List all todos
+GET {{baseUrl}}/api/todos
+
+### Get a single todo
+GET {{baseUrl}}/api/todos/1
+
+### Delete a todo
+DELETE {{baseUrl}}/api/todos/1
