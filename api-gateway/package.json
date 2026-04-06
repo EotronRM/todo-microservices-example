@@ -1,0 +1,19 @@
+{
+  "name": "api-gateway",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/api-gateway/src/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^6.0.0",
+    "tsx": "^4.7.0"
+  }
+}

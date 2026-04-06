@@ -1,0 +1,7 @@
+@baseUrl = http://localhost:3000
+
+### Generate a note card image for todo 1
+GET {{baseUrl}}/api/note-card/1
+
+### Generate a note card image for todo 2
+GET {{baseUrl}}/api/note-card/2
