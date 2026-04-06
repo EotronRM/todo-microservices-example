@@ -1,5 +1,5 @@
 import express from 'express';
-import { registerService, setupGracefulShutdown } from '../../shared/consul.js';
+import { registerService, setupGracefulShutdown } from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
 
 const app = express();

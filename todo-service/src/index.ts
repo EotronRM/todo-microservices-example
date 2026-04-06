@@ -4,7 +4,7 @@ import {
   registerService,
   discoverService,
   setupGracefulShutdown,
-} from '../../shared/consul.js';
+} from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
 
 const app = express();

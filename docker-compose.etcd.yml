@@ -1,0 +1,105 @@
+# Standalone: uses etcd instead of Consul for service discovery
+# Usage: docker compose -f docker-compose.etcd.yml up --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=todos
+    ports:
+      - "5432:5432"
+
+  etcd:
+    image: bitnamilegacy/etcd:latest
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+    ports:
+      - "2379:2379"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=api-gateway
+    depends_on:
+      - etcd
+
+  todo-service:
+    build:
+      context: .
+      dockerfile: todo-service/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=todo-service
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/todos
+    depends_on:
+      - etcd
+      - postgres
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=user-service
+    depends_on:
+      - etcd
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=notification-service
+    depends_on:
+      - etcd
+
+  note-card-service-1:
+    build:
+      context: .
+      dockerfile: note-card-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=note-card-service-1
+      - PORT=3004
+      - INSTANCE_ID=1
+    depends_on:
+      - etcd
+
+  note-card-service-2:
+    build:
+      context: .
+      dockerfile: note-card-service/Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=note-card-service-2
+      - PORT=3005
+      - INSTANCE_ID=2
+    depends_on:
+      - etcd
