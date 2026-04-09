@@ -3,6 +3,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
+    "@cloudamqp/amqp-client": "^3.4.1",
     "express": "^5.1.0"
   },
   "devDependencies": {

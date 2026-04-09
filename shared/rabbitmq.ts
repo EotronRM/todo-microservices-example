@@ -1,4 +1,4 @@
-import amqplib from 'amqplib';
+import { AMQPClient, AMQPChannel } from '@cloudamqp/amqp-client';
 import {
   ORCHESTRATION_EXCHANGE,
   CHOREOGRAPHY_EXCHANGE,
@@ -10,12 +10,13 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5
 
 // --- Connection with retry (same pattern as initDb in todo-service) ---
 
-export async function connectRabbit(retries = 10): Promise<amqplib.ChannelModel> {
+export async function connectRabbit(retries = 10): Promise<AMQPClient> {
   for (let i = 0; i < retries; i++) {
     try {
-      const connection = await amqplib.connect(RABBITMQ_URL);
+      const client = new AMQPClient(RABBITMQ_URL);
+      await client.connect();
       console.log('[rabbitmq] Connected');
-      return connection;
+      return client;
     } catch (err) {
       console.log(
         `[rabbitmq] Not ready, retrying in 2s... (${i + 1}/${retries})`
@@ -29,38 +30,38 @@ export async function connectRabbit(retries = 10): Promise<amqplib.ChannelModel>
 // --- Channel creation ---
 
 export async function createChannel(
-  connection: amqplib.ChannelModel
-): Promise<amqplib.Channel> {
-  const channel = await connection.createChannel();
+  connection: AMQPClient
+): Promise<AMQPChannel> {
+  const channel = await connection.channel();
   await channel.prefetch(1);
   return channel;
 }
 
 // --- Exchange & Queue setup (idempotent — safe for every service to call) ---
 
-export async function setupExchanges(channel: amqplib.Channel): Promise<void> {
+export async function setupExchanges(channel: AMQPChannel): Promise<void> {
   // Orchestration: direct exchange (point-to-point commands)
-  await channel.assertExchange(ORCHESTRATION_EXCHANGE, 'direct', {
+  await channel.exchangeDeclare(ORCHESTRATION_EXCHANGE, 'direct', {
     durable: true,
   });
 
   // Choreography: topic exchange (broadcast events)
-  await channel.assertExchange(CHOREOGRAPHY_EXCHANGE, 'topic', {
+  await channel.exchangeDeclare(CHOREOGRAPHY_EXCHANGE, 'topic', {
     durable: true,
   });
 
   // Assert and bind orchestration queues
   for (const routingKey of Object.values(ORK)) {
     const queue = `saga.${routingKey}`;
-    await channel.assertQueue(queue, { durable: true });
-    await channel.bindQueue(queue, ORCHESTRATION_EXCHANGE, routingKey);
+    await channel.queueDeclare(queue, { durable: true });
+    await channel.queueBind(queue, ORCHESTRATION_EXCHANGE, routingKey);
   }
 
   // Assert and bind choreography queues
   for (const routingKey of Object.values(CRK)) {
     const queue = `choreography.${routingKey}`;
-    await channel.assertQueue(queue, { durable: true });
-    await channel.bindQueue(queue, CHOREOGRAPHY_EXCHANGE, routingKey);
+    await channel.queueDeclare(queue, { durable: true });
+    await channel.queueBind(queue, CHOREOGRAPHY_EXCHANGE, routingKey);
   }
 
   console.log('[rabbitmq] Exchanges and queues ready');
@@ -69,32 +70,33 @@ export async function setupExchanges(channel: amqplib.Channel): Promise<void> {
 // --- Publish ---
 
 export function publishMessage(
-  channel: amqplib.Channel,
+  channel: AMQPChannel,
   exchange: string,
   routingKey: string,
   payload: object
 ): void {
-  const buffer = Buffer.from(JSON.stringify(payload));
-  channel.publish(exchange, routingKey, buffer, { persistent: true });
+  channel.basicPublish(exchange, routingKey, JSON.stringify(payload), {
+    deliveryMode: 2,
+  });
 }
 
 // --- Consume ---
 
 export async function consumeQueue(
-  channel: amqplib.Channel,
+  channel: AMQPChannel,
   queue: string,
   handler: (msg: any) => Promise<void>
 ): Promise<void> {
-  await channel.consume(queue, async (msg) => {
+  await channel.basicConsume(queue, { noAck: false }, async (msg) => {
     if (!msg) return;
     try {
-      const payload = JSON.parse(msg.content.toString());
+      const payload = JSON.parse(msg.bodyToString() ?? '');
       await handler(payload);
-      channel.ack(msg);
+      await msg.ack();
     } catch (err) {
       console.error(`[rabbitmq] Error processing message from ${queue}:`, err);
       // Reject and don't requeue to avoid infinite loops
-      channel.nack(msg, false, false);
+      await msg.nack(false);
     }
   });
 }

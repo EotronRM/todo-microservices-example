@@ -5,6 +5,7 @@
     "": {
       "name": "shared",
       "dependencies": {
+        "@cloudamqp/amqp-client": "^3.4.1",
         "express": "^5.1.0",
       },
       "devDependencies": {
@@ -14,6 +15,8 @@
     },
   },
   "packages": {
+    "@cloudamqp/amqp-client": ["@cloudamqp/amqp-client@3.4.1", "", {}, "sha512-A53N3dpS4zEaVL1GMIDg/A4hTy/t/nqVDNaY6m+48VKi2N1cpGkmTmc6RHMAD06UTV6Z0O8CeGqs7076w6VFMQ=="],
+
     "@types/body-parser": ["@types/body-parser@1.19.6", "", { "dependencies": { "@types/connect": "*", "@types/node": "*" } }, ""],
 
     "@types/connect": ["@types/connect@3.4.38", "", { "dependencies": { "@types/node": "*" } }, ""],
