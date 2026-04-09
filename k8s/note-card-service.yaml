@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: note-card-service
+  namespace: todo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: note-card-service
+  template:
+    metadata:
+      labels:
+        app: note-card-service
+    spec:
+      containers:
+        - name: note-card-service
+          image: todo-microservices-example-note-card-service-1:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3004
+          env:
+            - name: DISCOVERY_BACKEND
+              value: kubernetes
+            - name: PORT
+              value: "3004"
+            - name: RABBITMQ_URL
+              value: amqp://guest:guest@rabbitmq:5672
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3004
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3004
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: note-card-service
+  namespace: todo-app
+spec:
+  selector:
+    app: note-card-service
+  ports:
+    - port: 80
+      targetPort: 3004
