@@ -1,0 +1,26 @@
+# Infrastructure only — for local development
+# Usage: docker compose -f docker-compose.infra.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=todos
+    ports:
+      - "5432:5432"
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+  consul:
+    image: hashicorp/consul:1.15
+    command: agent -dev -client=0.0.0.0
+    ports:
+      - "8500:8500"

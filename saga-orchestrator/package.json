@@ -1,10 +1,10 @@
 {
-  "name": "notification-service",
+  "name": "saga-orchestrator",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/notification-service/src/index.js",
+    "start": "node dist/saga-orchestrator/src/index.js",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {

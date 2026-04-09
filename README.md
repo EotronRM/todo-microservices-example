@@ -1,6 +1,6 @@
 # Microservices Demo
 
-A microservices architecture demo built with Express 5, TypeScript 7, and Docker Compose. Features pluggable service discovery (Consul or etcd), PostgreSQL persistence, and multi-instance load distribution.
+A microservices architecture demo built with Express 5, TypeScript 7, and Docker Compose. Features pluggable service discovery (Consul or etcd), PostgreSQL persistence, multi-instance load distribution, and **saga pattern implementations** (orchestration and choreography) with RabbitMQ.
 
 ## Requirements
 
@@ -38,8 +38,13 @@ bun scripts/smoke.mts
 |--------|----------|-------------|
 | GET | `/api/todos` | List all todos |
 | POST | `/api/todos` | Create a todo (sends notification) |
+| GET | `/api/todos/:id` | Get a single todo |
+| DELETE | `/api/todos/:id` | Delete a todo |
+| PUT | `/api/todos/:id/assign` | Assign todo to user (choreography saga) |
 | GET | `/api/users/:id` | Get user by ID |
 | GET | `/api/note-card/:todoId` | Generate a PNG card for a todo |
+| POST | `/api/saga/create-full-todo` | Start orchestration saga |
+| GET | `/api/saga/status/:sagaId` | Check orchestration saga status |
 
 ### Example requests
 
@@ -81,6 +86,7 @@ note-card-service -> [Service Discovery] -> todo-service (fetches todo to render
 | user-service | 3002 | Serves hardcoded user data |
 | notification-service | 3003 | Receives and logs notifications |
 | note-card-service | 3004, 3005 | Generates PNG note card images (2 instances) |
+| saga-orchestrator | 3010 | Orchestration saga coordinator |
 | web | 8080 | React + Tailwind UI. nginx serves it and proxies `/api` to the gateway |
 
 ### Infrastructure
@@ -90,12 +96,114 @@ note-card-service -> [Service Discovery] -> todo-service (fetches todo to render
 | PostgreSQL | 5432 | Persistent storage for todos |
 | Consul | 8500 | Service discovery (default backend) |
 | etcd | 2379 | Service discovery (alternative backend) |
+| RabbitMQ | 5672, 15672 | Message broker (AMQP + Management UI) |
 
-## Local Development (without Docker)
+## Saga Pattern
 
-Each service is an independent project managed with Bun. You need Consul (or etcd) and PostgreSQL running locally.
+This project implements both saga patterns side-by-side for educational comparison.
+
+### Orchestration: "Create Full Todo"
+
+A centralized `saga-orchestrator` service coordinates the entire workflow by sending commands and waiting for replies.
+
+```
+saga-orchestrator --cmd.todo.create--> todo-service
+                  <--reply--
+                  --cmd.user.validate--> user-service
+                  <--reply--
+                  --cmd.notification.send--> notification-service
+                  <--reply--
+                  --cmd.notecard.generate--> note-card-service
+                  <--reply--
+                  --> COMPLETED
+
+On failure (e.g., user not found):
+                  --cmd.todo.delete--> todo-service (compensation)
+                  --> FAILED
+```
+
+**Try it:**
+```bash
+# Start the saga (returns sagaId)
+curl -X POST http://localhost:3000/api/saga/create-full-todo \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Learn sagas", "userId": 1}'
+
+# Check status
+curl http://localhost:3000/api/saga/status/<sagaId>
+
+# Test compensation (invalid user)
+curl -X POST http://localhost:3000/api/saga/create-full-todo \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Will be rolled back", "userId": 999}'
+```
+
+### Choreography: "Assign & Notify"
+
+No central coordinator. Each service reacts to events and emits the next event in the chain.
+
+```
+todo-service --TodoAssignmentRequested--> user-service
+user-service --UserValidated--> todo-service
+todo-service --TodoAssignmentConfirmed--> notification-service
+notification-service --NotificationSent--> (done)
+
+On failure (user not found):
+user-service --UserValidationFailed--> todo-service
+todo-service --TodoAssignmentRolledBack--> (done)
+```
+
+**Try it:**
+```bash
+# Create a todo first
+curl -X POST http://localhost:3000/api/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Assign me"}'
+
+# Assign to user (returns 202, status = "assigning")
+curl -X PUT http://localhost:3000/api/todos/1/assign \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1}'
+
+# Check assignment status (should show status = "assigned")
+curl http://localhost:3000/api/todos/1
+
+# Test compensation (assign to non-existent user)
+curl -X PUT http://localhost:3000/api/todos/1/assign \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 999}'
+```
+
+### Key Differences
+
+| Aspect | Orchestration | Choreography |
+|--------|--------------|--------------|
+| Exchange type | `direct` (point-to-point) | `topic` (broadcast events) |
+| Message naming | `cmd.*` (imperative) | Past-tense events (declarative) |
+| Workflow knowledge | Centralized in orchestrator | Distributed across services |
+| State tracking | Explicit state machine | Implicit in DB `status` column |
+| Compensation | Orchestrator decides and triggers | Each service handles own rollback |
+| New service needed | Yes (`saga-orchestrator`) | No |
+
+### RabbitMQ Management UI
+
+Visit http://localhost:15672 (guest/guest) to inspect exchanges, queues, and message rates.
+
+### Observing the Flow
+
+Use `docker compose logs -f` and watch for log prefixes:
+- `[ORCHESTRATOR]` — saga state transitions
+- `[SAGA-CMD]` — command handling by downstream services
+- `[CHOREOGRAPHY]` — event-driven flow between services
+
+## Local Development
+
+Start infrastructure with Docker, then run services locally with Bun:
 
 ```bash
+# Start PostgreSQL, RabbitMQ, and Consul
+docker compose -f docker-compose.infra.yml up -d
+
 # Install the shared module's dependencies (once per clone)
 cd shared && bun install
 
@@ -136,6 +244,7 @@ bun run build    # type-check and bundle to web/dist/
 | `DATABASE_URL` | todo-service | — | PostgreSQL connection string |
 | `PORT` | note-card-service | `3004` | HTTP port |
 | `INSTANCE_ID` | note-card-service | — | Instance identifier shown on generated cards |
+| `RABBITMQ_URL` | All services | `amqp://guest:guest@localhost:5672` | RabbitMQ connection string |
 | `API_GATEWAY_URL` | web | `http://api-gateway:3000` | Where nginx proxies `/api/` |
 
 ## Rebuilding a Single Service

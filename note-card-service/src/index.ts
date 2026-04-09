@@ -6,6 +6,18 @@ import {
   setupGracefulShutdown,
 } from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
+import {
+  connectRabbit,
+  createChannel,
+  setupExchanges,
+  publishMessage,
+  consumeQueue,
+} from '../../shared/rabbitmq.js';
+import {
+  ORCHESTRATION_EXCHANGE,
+  ORK,
+  type GenerateNoteCardCmd,
+} from '../../shared/saga-types.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3004');
@@ -112,8 +124,56 @@ app.get('/note-card/:todoId', async (req, res) => {
   }
 });
 
+// --- Orchestration Saga: RabbitMQ command handlers ---
+
+async function setupRabbitMQ() {
+  const connection = await connectRabbit();
+  const channel = await createChannel(connection);
+  await setupExchanges(channel);
+
+  // Handle: generate note card (orchestration command)
+  await consumeQueue(
+    channel,
+    `saga.${ORK.CMD_NOTECARD_GENERATE}`,
+    async (cmd: GenerateNoteCardCmd) => {
+      console.log(`[SAGA-CMD][instance=${INSTANCE_ID}] Generating card for todo ${cmd.todoId}, saga ${cmd.sagaId}`);
+      try {
+        // Fetch the todo via service discovery (reusing existing pattern)
+        const todoInstance = await discoverService('todo-service');
+        const todoRes = await fetch(
+          `http://${todoInstance.address}:${todoInstance.port}/todos/${cmd.todoId}`
+        );
+        if (!todoRes.ok) {
+          throw new Error(`Todo ${cmd.todoId} not found`);
+        }
+        const todo = (await todoRes.json()) as { id: number; title: string; completed: boolean };
+
+        // Generate the PNG (same as the HTTP endpoint)
+        const svg = buildSvg(todo.title, todo.completed, todo.id);
+        await sharp(Buffer.from(svg)).png().toBuffer();
+
+        publishMessage(channel, ORCHESTRATION_EXCHANGE, ORK.CMD_NOTECARD_GENERATE_REPLY, {
+          sagaId: cmd.sagaId,
+          success: true,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        publishMessage(channel, ORCHESTRATION_EXCHANGE, ORK.CMD_NOTECARD_GENERATE_REPLY, {
+          sagaId: cmd.sagaId,
+          success: false,
+          error: (err as Error).message,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  );
+
+  console.log(`[note-card-service][instance=${INSTANCE_ID}] RabbitMQ consumers ready`);
+}
+
 app.listen(PORT, async () => {
   console.log(`${SERVICE_NAME} (instance ${INSTANCE_ID}) running on port ${PORT}`);
+  await setupRabbitMQ();
   await registerService(SERVICE_NAME, SERVICE_ADDRESS, PORT);
   setupGracefulShutdown(SERVICE_NAME, PORT);
 });

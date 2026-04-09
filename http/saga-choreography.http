@@ -1,0 +1,50 @@
+@baseUrl = http://localhost:3000
+
+### ========================================
+### Choreography Saga: "Assign & Notify"
+### ========================================
+
+### Step 1: Create a todo first
+POST {{baseUrl}}/api/todos
+Content-Type: application/json
+
+{
+  "title": "Complete the choreography saga demo"
+}
+
+### Step 2 (Happy path): Assign todo to a valid user
+### This triggers the event chain:
+###   TodoAssignmentRequested -> UserValidated -> TodoAssignmentConfirmed -> NotificationSent
+PUT {{baseUrl}}/api/todos/1/assign
+Content-Type: application/json
+
+{
+  "userId": 1
+}
+
+### Step 3: Check the todo — status should be "assigned", user_id should be 1
+GET {{baseUrl}}/api/todos/1
+
+### ========================================
+### Compensation path: Invalid user
+### ========================================
+
+### Create another todo to test compensation
+POST {{baseUrl}}/api/todos
+Content-Type: application/json
+
+{
+  "title": "This assignment will fail"
+}
+
+### Assign to a non-existent user
+### This triggers: TodoAssignmentRequested -> UserValidationFailed -> TodoAssignmentRolledBack
+PUT {{baseUrl}}/api/todos/2/assign
+Content-Type: application/json
+
+{
+  "userId": 999
+}
+
+### Check the todo — status should be "assignment_failed", user_id should be null
+GET {{baseUrl}}/api/todos/2
