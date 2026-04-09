@@ -1,0 +1,43 @@
+# Retry and timeout policies for Linkerd service mesh
+# Applied to GET requests on todo-service and user-service
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: todo-service-route
+  namespace: todo-app
+spec:
+  parentRefs:
+    - name: todo-service
+      kind: Service
+      group: core
+      port: 80
+  rules:
+    - matches:
+        - method: GET
+      timeouts:
+        request: 5s
+      retry:
+        limit: 2
+        conditions:
+          - statusCodes: [500, 502, 503]
+---
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: user-service-route
+  namespace: todo-app
+spec:
+  parentRefs:
+    - name: user-service
+      kind: Service
+      group: core
+      port: 80
+  rules:
+    - matches:
+        - method: GET
+      timeouts:
+        request: 3s
+      retry:
+        limit: 2
+        conditions:
+          - statusCodes: [500, 502, 503]
