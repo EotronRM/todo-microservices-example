@@ -1,16 +1,15 @@
 {
-  "name": "note-card-service",
+  "name": "saga-orchestrator",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/note-card-service/src/index.js",
+    "start": "node dist/saga-orchestrator/src/index.js",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
     "amqplib": "^0.10.0",
-    "express": "^5.1.0",
-    "sharp": "^0.33.0"
+    "express": "^5.1.0"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.0",

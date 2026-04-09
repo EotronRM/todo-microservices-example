@@ -65,6 +65,20 @@ app.post('/api/todos', async (req, res) => {
   }
 });
 
+app.put('/api/todos/:id/assign', async (req, res) => {
+  try {
+    const result = await proxy('todo-service', `/todos/${req.params.id}/assign`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[Gateway]', (err as Error).message);
+    res.status(503).json({ error: 'todo-service unavailable' });
+  }
+});
+
 app.delete('/api/todos/:id', async (req, res) => {
   try {
     const result = await proxy('todo-service', `/todos/${req.params.id}`, {
@@ -74,6 +88,35 @@ app.delete('/api/todos/:id', async (req, res) => {
   } catch (err) {
     console.error('[Gateway]', (err as Error).message);
     res.status(503).json({ error: 'todo-service unavailable' });
+  }
+});
+
+// --- Saga orchestration routes ---
+
+app.post('/api/saga/create-full-todo', async (req, res) => {
+  try {
+    const result = await proxy('saga-orchestrator', '/saga/create-full-todo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[Gateway]', (err as Error).message);
+    res.status(503).json({ error: 'saga-orchestrator unavailable' });
+  }
+});
+
+app.get('/api/saga/status/:sagaId', async (req, res) => {
+  try {
+    const result = await proxy(
+      'saga-orchestrator',
+      `/saga/status/${req.params.sagaId}`
+    );
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[Gateway]', (err as Error).message);
+    res.status(503).json({ error: 'saga-orchestrator unavailable' });
   }
 });
 

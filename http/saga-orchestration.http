@@ -1,0 +1,37 @@
+@baseUrl = http://localhost:3000
+
+### ========================================
+### Orchestration Saga: "Create Full Todo"
+### ========================================
+
+### Happy path: Create a full todo (valid user)
+### This triggers: create todo -> validate user -> send notification -> generate note card
+POST {{baseUrl}}/api/saga/create-full-todo
+Content-Type: application/json
+
+{
+  "title": "Learn the saga pattern",
+  "userId": 1
+}
+
+### Check saga status (replace with your sagaId)
+GET {{baseUrl}}/api/saga/status/<sagaId>
+
+### ========================================
+### Compensation path: Invalid user
+### ========================================
+
+### This triggers: create todo -> validate user (FAILS) -> delete todo (compensation)
+POST {{baseUrl}}/api/saga/create-full-todo
+Content-Type: application/json
+
+{
+  "title": "This will be rolled back",
+  "userId": 999
+}
+
+### Check saga status — should show FAILED after compensation
+GET {{baseUrl}}/api/saga/status/<sagaId>
+
+### Verify the todo was deleted (compensation worked)
+GET {{baseUrl}}/api/todos

@@ -8,6 +8,15 @@ services:
     ports:
       - "5432:5432"
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
   consul:
     image: hashicorp/consul:1.15
     command: agent -dev -client=0.0.0.0
@@ -36,9 +45,11 @@ services:
       - CONSUL_HOST=consul
       - SERVICE_ADDRESS=todo-service
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/todos
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - consul
       - postgres
+      - rabbitmq
 
   user-service:
     build:
@@ -49,8 +60,10 @@ services:
     environment:
       - CONSUL_HOST=consul
       - SERVICE_ADDRESS=user-service
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - consul
+      - rabbitmq
 
   notification-service:
     build:
@@ -61,8 +74,10 @@ services:
     environment:
       - CONSUL_HOST=consul
       - SERVICE_ADDRESS=notification-service
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - consul
+      - rabbitmq
 
   note-card-service-1:
     build:
@@ -75,8 +90,10 @@ services:
       - SERVICE_ADDRESS=note-card-service-1
       - PORT=3004
       - INSTANCE_ID=1
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - consul
+      - rabbitmq
 
   note-card-service-2:
     build:
@@ -89,5 +106,21 @@ services:
       - SERVICE_ADDRESS=note-card-service-2
       - PORT=3005
       - INSTANCE_ID=2
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - consul
+      - rabbitmq
+
+  saga-orchestrator:
+    build:
+      context: .
+      dockerfile: saga-orchestrator/Dockerfile
+    ports:
+      - "3010:3010"
+    environment:
+      - CONSUL_HOST=consul
+      - SERVICE_ADDRESS=saga-orchestrator
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - consul
+      - rabbitmq

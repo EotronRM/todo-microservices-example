@@ -8,9 +8,11 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "amqplib": "^0.10.0",
     "express": "^5.1.0"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.0",
     "@types/express": "^5.0.0",
     "@types/node": "^20.10.0",
     "typescript": "^6.0.0",
