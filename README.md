@@ -26,6 +26,10 @@ docker compose -f docker-compose.etcd.yml up --build
 
 See [KUBERNETES.md](KUBERNETES.md) for full setup with minikube.
 
+### Service Mesh (Linkerd)
+
+See [SERVICE_MESH.md](SERVICE_MESH.md) for adding mTLS, observability, and retry policies on top of Kubernetes.
+
 Once running, the API gateway is available at `http://localhost:3000` (Docker) or the URL returned by minikube.
 
 ### Endpoints
