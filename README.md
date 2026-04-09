@@ -22,7 +22,11 @@ docker compose up --build
 docker compose -f docker-compose.etcd.yml up --build
 ```
 
-Once running, the API gateway is available at `http://localhost:3000` and the web UI at `http://localhost:8080`.
+### Run with Kubernetes
+
+See [KUBERNETES.md](KUBERNETES.md) for full setup with minikube.
+
+Once running, the API gateway is available at `http://localhost:3000` (Docker) or the URL returned by minikube, and the web UI at `http://localhost:8080` (Docker).
 
 ### Smoke test
 
@@ -142,7 +146,7 @@ bun run build    # type-check and bundle to web/dist/
 
 | Variable | Used by | Default | Purpose |
 |----------|---------|---------|---------|
-| `DISCOVERY_BACKEND` | All services | `consul` | `consul` or `etcd` |
+| `DISCOVERY_BACKEND` | All services | `consul` | `consul`, `etcd`, or `kubernetes` |
 | `CONSUL_HOST` | All services | `localhost` | Consul API hostname |
 | `ETCD_HOST` | All services | `localhost` | etcd API hostname |
 | `ETCD_PORT` | All services | `2379` | etcd API port |

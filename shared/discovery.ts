@@ -1,12 +1,14 @@
-// Adapter: selects Consul or etcd based on DISCOVERY_BACKEND env var
+// Adapter: selects Consul, etcd, or Kubernetes based on DISCOVERY_BACKEND env var
 // Default: consul (preserves existing behavior)
 
 const backend = process.env.DISCOVERY_BACKEND || 'consul';
 
 const mod =
-  backend === 'etcd'
-    ? await import('./etcd.js')
-    : await import('./consul.js');
+  backend === 'kubernetes'
+    ? await import('./kubernetes.js')
+    : backend === 'etcd'
+      ? await import('./etcd.js')
+      : await import('./consul.js');
 
 export type { ServiceInstance } from './consul.js';
 
