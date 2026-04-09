@@ -1,5 +1,13 @@
 {
   "name": "shared",
   "type": "module",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@cloudamqp/amqp-client": "^3.4.1",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.10.0"
+  }
 }

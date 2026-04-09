@@ -8,12 +8,11 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "amqplib": "^0.10.0",
+    "@cloudamqp/amqp-client": "^3.4.1",
     "express": "^5.1.0",
     "sharp": "^0.33.0"
   },
   "devDependencies": {
-    "@types/amqplib": "^0.10.0",
     "@types/express": "^5.0.0",
     "@types/node": "^20.10.0",
     "typescript": "^6.0.0",
