@@ -6,7 +6,7 @@ A microservices architecture demo built with Express 5, TypeScript 6, and Docker
 
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 - [Node.js 20+](https://nodejs.org/) (only for local development without Docker)
-- npm (included with Node.js)
+- [Bun](https://bun.sh/) (package manager)
 
 ## Quick Start
 
@@ -185,22 +185,25 @@ Use `docker compose logs -f` and watch for log prefixes:
 - `[SAGA-CMD]` — command handling by downstream services
 - `[CHOREOGRAPHY]` — event-driven flow between services
 
-## Local Development (without Docker)
+## Local Development
 
-Each service is an independent Node.js project. You need Consul (or etcd) and PostgreSQL running locally.
+Start infrastructure with Docker, then run services locally with Bun:
 
 ```bash
+# Start PostgreSQL, RabbitMQ, and Consul
+docker compose -f docker-compose.infra.yml up -d
+
 # Install dependencies for a service
-cd todo-service && npm install
+cd todo-service && bun install
 
 # Run in development mode (uses tsx for live TypeScript execution)
-npm run dev
+bun run dev
 
 # Build TypeScript to JavaScript
-npm run build
+bun run build
 
 # Run the compiled build
-npm start
+bun run start
 ```
 
 Repeat for each service you want to run.
