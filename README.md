@@ -85,6 +85,9 @@ note-card-service -> [Service Discovery] -> todo-service (fetches todo to render
 Each service is an independent Node.js project. You need Consul (or etcd) and PostgreSQL running locally.
 
 ```bash
+# Install the shared module's dependencies (once per clone)
+cd shared && npm install
+
 # Install dependencies for a service
 cd todo-service && npm install
 

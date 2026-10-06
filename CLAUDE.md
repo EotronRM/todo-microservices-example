@@ -13,10 +13,9 @@ This copy describes `main`: there is no RabbitMQ, saga-orchestrator, `k8s/` dire
 Each service is an independent npm project (no root package.json). Run commands from inside a service directory.
 
 ```bash
-# Once per clone: shared/ declares no dependencies on this branch, so outside Docker
-# tsc and tsx can't resolve `express` from shared/healthcheck.ts. Install it without
-# touching package.json (the Dockerfiles symlink node_modules to /app instead).
-cd shared && npm install --no-save express@^5.1.0 @types/express@^5.0.0
+# Once per clone: shared/ has its own package.json so its imports (express) resolve
+# outside Docker. Without it, tsc and tsx fail on shared/healthcheck.ts.
+cd shared && npm install
 
 # Install dependencies for a service
 cd api-gateway && npm install
@@ -95,7 +94,7 @@ Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
 
 - **ESM + TypeScript 6**: All services use `"type": "module"` with `module: "nodenext"`. Relative imports require `.js` extensions even in `.ts` files.
 - **Shared code compilation**: Each service's `tsconfig.json` sets `rootDir: ".."` and includes `"../shared/**/*"`. Output lands in `dist/shared/` and `dist/<service>/src/`.
-- **Dockerfiles**: single-stage `node:20-alpine`. They copy `shared/` and the service into `/app` to mirror the repo layout, run `npm install`, symlink the service's `node_modules` to `/app/node_modules` so `shared/` can resolve express types, then run `npx tsc`. The note-card image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
+- **Dockerfiles**: single-stage `node:20-alpine`. They copy `shared/` and the service into `/app` to mirror the repo layout, run `npm install` for the service only, symlink the service's `node_modules` to `/app/node_modules` so `shared/` resolves express from there, then run `npx tsc`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
 - **Multi-instance**: note-card-service runs 2 instances (ports 3004, 3005) under the same service name with different IDs (`note-card-service-3004`, `note-card-service-3005`). The `INSTANCE_ID` env var is drawn on the card and sent in the `X-Served-By` header. The gateway only forwards `Content-Type`, so that header is visible only when calling an instance directly.
 - **Database**: todo-service uses PostgreSQL via the `pg` package with the `DATABASE_URL` env var. It creates the `todos` table (`id`, `title`, `completed`) on startup, retrying 5 times 2s apart while the container starts.
 - **Express CJS interop**: Express 5 is still CJS. `esModuleInterop: true` and `verbatimModuleSyntax: false` in the base tsconfig enable `import express from 'express'` under nodenext.
