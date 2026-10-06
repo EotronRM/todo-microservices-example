@@ -1,6 +1,6 @@
 # Architecture
 
-> This copy describes the **`feature/saga-pattern`** branch. Each feature branch has its own copy of this file, extended with what that branch adds:
+> This copy describes the **`feature/kubernetes`** branch. Each feature branch has its own copy of this file, extended with what that branch adds:
 >
 > | Branch | Adds |
 > |---|---|
@@ -31,7 +31,7 @@ flowchart LR
 
     pg[("PostgreSQL<br/>todos table")]
     mq[["RabbitMQ :5672<br/>saga.orchestration (direct)<br/>saga.choreography (topic)"]]
-    reg{{"Service registry<br/>Consul :8500 or etcd :2379"}}
+    reg{{"Service discovery<br/>Consul :8500, etcd :2379<br/>or Kubernetes DNS"}}
 
     browser --> web
     web -->|"/api/*"| gw
@@ -47,8 +47,9 @@ flowchart LR
     services -.->|"register + discover"| reg
 ```
 
-- Solid arrows are HTTP calls, and thick arrows are AMQP connections to RabbitMQ. Every service registers itself in the registry on startup, and every caller looks up a healthy instance before each HTTP call (dotted arrow).
-- `note-card-service` runs as two instances under one service name. Callers pick one of them at random.
+- Solid arrows are HTTP calls, and thick arrows are AMQP connections to RabbitMQ. Every caller looks up the target before each HTTP call (dotted arrow). With Consul or etcd, each service registers itself on startup. On Kubernetes, the platform does that.
+- `note-card-service` runs as two instances under one service name, and requests are spread across both.
+- Ports are container ports. On Kubernetes, every Service listens on `:80` and forwards to these.
 - `user-service` serves three hardcoded users, and `notification-service` only logs what it receives.
 - `web` is the React UI. nginx serves the bundle and proxies `/api/*` to the gateway on the same origin, because the gateway sends no CORS headers. It isn't registered in the registry.
 - `todo-service` creates the `todos` table (`id`, `title`, `completed`, `user_id`, `status`) on startup. It retries 5 times, 2s apart, while PostgreSQL starts.
@@ -76,9 +77,10 @@ flowchart LR
     code["Service code"] -->|"registerService()<br/>discoverService()<br/>setupGracefulShutdown()"| adapter["shared/discovery.ts"]
     adapter -->|"consul (default)"| consul["shared/consul.ts"]
     adapter -->|"etcd"| etcd["shared/etcd.ts"]
+    adapter -->|"kubernetes"| k8s["shared/kubernetes.ts"]
 ```
 
-Both backends use **client-side discovery**: the registry returns every live instance, and the caller picks one at random. That random pick is what spreads traffic across the two note-card instances.
+Consul and etcd use **client-side discovery**: the registry returns every live instance, and the caller picks one at random. That random pick is what spreads traffic across the two note-card instances. The Kubernetes backend hands this job to the platform (**server-side discovery**). See [Kubernetes](#kubernetes) below.
 
 ### Consul
 
@@ -135,15 +137,44 @@ sequenceDiagram
     end
 ```
 
-### Consul vs etcd
+### Kubernetes
 
-| | Consul ([`consul.ts`](../shared/consul.ts)) | etcd ([`etcd.ts`](../shared/etcd.ts)) |
-|---|---|---|
-| Who checks health | Consul polls `/health` (server-side) | The service renews its lease (client-side) |
-| Registration | One API call | Grant a lease, put the key, start a keepalive timer |
-| Discovery query | `GET /v1/health/service/{name}?passing=true` | Prefix range on `/services/{name}/instances/` |
-| A crashed instance disappears after | The next failed check (every 10s) | The lease TTL (15s) |
-| State kept inside the service | None | Lease ID and keepalive timer |
+There's no registry to talk to. `registerService()` and `deregisterService()` do nothing, and `discoverService(name)` returns `{address: name, port: 80}` without any network call. Cluster DNS and the Service's endpoints do the rest.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as kubelet
+    participant P as todo-service pod
+    participant G as api-gateway pod
+    participant DNS as CoreDNS
+    participant SVC as Service todo-service
+
+    loop readinessProbe every 5s
+        K->>P: GET /health
+        P-->>K: 200 OK
+    end
+    Note over SVC,P: only Ready pods are listed in the Service's endpoints
+    Note over G: discoverService("todo-service")<br/>returns todo-service:80
+    G->>DNS: resolve todo-service
+    DNS-->>G: ClusterIP
+    G->>SVC: GET http://todo-service:80/todos
+    SVC->>P: kube-proxy forwards to a Ready pod on :3001
+    Note over K,P: a terminating pod is removed from the endpoints<br/>if the liveness probe fails, kubelet restarts the container
+```
+
+The load-balancing decision moves from the caller to kube-proxy, which picks a pod **per connection**, not per request. Node's `fetch` keeps connections alive and reuses them, so a burst of requests from one caller can all land on the same note-card pod.
+
+### Comparison
+
+| | Consul ([`consul.ts`](../shared/consul.ts)) | etcd ([`etcd.ts`](../shared/etcd.ts)) | Kubernetes ([`kubernetes.ts`](../shared/kubernetes.ts)) |
+|---|---|---|---|
+| Who checks health | Consul polls `/health` (server-side) | The service renews its lease (client-side) | kubelet runs the liveness and readiness probes |
+| Registration | One API call | Grant a lease, put the key, start a keepalive timer | None, because the Deployment and Service define it |
+| Discovery | `GET /v1/health/service/{name}?passing=true` | Prefix range on `/services/{name}/instances/` | DNS name `http://{name}:80` |
+| Who picks the instance | The caller, at random | The caller, at random | kube-proxy, per connection |
+| A dead instance disappears after | The next failed check (every 10s) | The lease TTL (15s) | Immediately if the process exits, or 3 failed readiness probes (about 15s) if it hangs |
+| State kept inside the service | None | Lease ID and keepalive timer | None |
 
 ## Request flows
 
@@ -186,7 +217,7 @@ sequenceDiagram
     participant T as todo-service
 
     C->>G: GET /api/note-card/:todoId
-    Note over G: discoverService("note-card-service")<br/>2 instances, random pick
+    Note over G: discoverService("note-card-service")<br/>2 instances (Consul/etcd: random pick)
     G->>NC: GET /note-card/:todoId
     Note over NC: discoverService("todo-service")
     NC->>T: GET /todos/:todoId
@@ -348,6 +379,8 @@ stateDiagram-v2
 
 ## Running the stack
 
+### Docker Compose
+
 | Compose file | Registry | Containers |
 |---|---|---|
 | [`docker-compose.yml`](../docker-compose.yml) | Consul 1.15 dev agent on `:8500` (includes the UI) | postgres, rabbitmq (management UI on `:15672`), consul, api-gateway, saga-orchestrator, todo-service, user-service, notification-service, note-card-service-1, note-card-service-2, web |
@@ -357,3 +390,43 @@ stateDiagram-v2
 Each service registers under its `SERVICE_ADDRESS` (its compose service name), so the registry hands out hostnames on the Docker network. Every container also publishes its port on the host.
 
 postgres and rabbitmq have healthchecks, and the services that use them start only once they report healthy (`depends_on: condition: service_healthy`).
+
+### Kubernetes
+
+The manifests in [`k8s/`](../k8s/) deploy everything into the `todo-app` namespace. [`KUBERNETES.md`](../KUBERNETES.md) has the minikube steps.
+
+```mermaid
+flowchart LR
+    client([Client]) -->|"minikube IP :30000"| gw
+
+    subgraph ns["namespace todo-app"]
+        gw["api-gateway<br/>NodePort 30000 → :3000"]
+        orch["saga-orchestrator<br/>:80 → :3010"]
+        todo["todo-service<br/>:80 → :3001"]
+        user["user-service<br/>:80 → :3002"]
+        notif["notification-service<br/>:80 → :3003"]
+        nc["note-card-service<br/>2 replicas, :80 → :3004"]
+        pg[("postgres :5432<br/>PVC postgres-pvc 1Gi")]
+        mq[["rabbitmq<br/>:5672, :15672"]]
+    end
+
+    gw --> todo & user & nc & orch
+    todo --> notif
+    nc --> todo
+    todo --> pg
+    orch & todo & user & notif & nc <==>|AMQP| mq
+```
+
+- Each box is a Deployment plus a Service. Application Services map port `80` to the container port, which is why `discoverService()` returns port `80`. Only the gateway is reachable from outside the cluster.
+- Every application pod has a liveness probe (every 10s) and a readiness probe (every 5s) on `/health`. postgres and rabbitmq have no probes.
+- Images come from `docker compose build` run against minikube's Docker daemon (`imagePullPolicy: Never`). There's no Consul or etcd in the cluster.
+- `INSTANCE_ID` isn't set in `note-card-service.yaml`, so both replicas draw "instance 1" on the card.
+
+| Concern | Docker Compose | Kubernetes |
+|---|---|---|
+| Discovery | Consul or etcd container | CoreDNS plus Service endpoints |
+| Health | Consul HTTP check or etcd lease | Liveness and readiness probes |
+| Two note-card instances | Two compose services, each with its own port | One Deployment with `replicas: 2` |
+| Load balancing | Random pick in the caller | kube-proxy, per connection |
+| Reachable from the host | Every service | Only api-gateway (NodePort `30000`) |
+| PostgreSQL data | No named volume | PersistentVolumeClaim (`1Gi`) |
