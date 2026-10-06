@@ -10,24 +10,24 @@ This copy describes `main`: there is no RabbitMQ, saga-orchestrator, `k8s/` dire
 
 ## Build & Run Commands
 
-Each service is an independent npm project (no root package.json). Run commands from inside a service directory.
+Each service is an independent Bun project (no root package.json). Run commands from inside a service directory. **Bun** is the package manager; `package-lock.json` is gitignored.
 
 ```bash
 # Once per clone: shared/ has its own package.json so its imports (express) resolve
 # outside Docker. Without it, tsc and tsx fail on shared/healthcheck.ts.
-cd shared && npm install
+cd shared && bun install
 
 # Install dependencies for a service
-cd api-gateway && npm install
+cd api-gateway && bun install
 
 # Development (runs TypeScript directly via tsx)
-npm run dev
+bun run dev
 
 # Build (compiles TypeScript to dist/)
-npm run build
+bun run build
 
 # Production (runs dist/<service>/src/index.js)
-npm start
+bun run start
 
 # Full stack with Docker + Consul (default)
 docker compose up --build
@@ -39,11 +39,13 @@ docker compose -f docker-compose.etcd.yml up --build
 docker compose build api-gateway && docker compose up
 ```
 
+The Docker builds run `bun install --frozen-lockfile`. After changing dependencies, commit the updated `bun.lock`, or the image build fails.
+
 To run services outside Docker, start only the infrastructure and point the services at `localhost`. Use etcd for this: Consul health-checks `http://<SERVICE_ADDRESS>:<port>/health` from inside its container, where `localhost` is the container itself, so local instances never pass their checks.
 
 ```bash
 docker compose -f docker-compose.etcd.yml up -d postgres etcd
-cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost npm run dev
+cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost bun run dev
 ```
 
 No test framework is configured. Exercise the API by hand with the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`).
@@ -94,7 +96,7 @@ Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
 
 - **ESM + TypeScript 6**: All services use `"type": "module"` with `module: "nodenext"`. Relative imports require `.js` extensions even in `.ts` files.
 - **Shared code compilation**: Each service's `tsconfig.json` sets `rootDir: ".."` and includes `"../shared/**/*"`. Output lands in `dist/shared/` and `dist/<service>/src/`.
-- **Dockerfiles**: single-stage `node:20-alpine`. They copy `shared/` and the service into `/app` to mirror the repo layout, run `npm install` for the service only, symlink the service's `node_modules` to `/app/node_modules` so `shared/` resolves express from there, then run `npx tsc`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
+- **Dockerfiles**: multi-stage. The `oven/bun:1-alpine` stage copies `shared/` and the service into `/app` to mirror the repo layout, runs `bun install --frozen-lockfile` for the service only, symlinks the service's `node_modules` to `/app/node_modules` so `shared/` resolves its imports from there, and runs `bunx tsc`. The `node:20-alpine` runtime stage copies only `dist/` and `node_modules/`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card runtime image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
 - **Multi-instance**: note-card-service runs 2 instances (ports 3004, 3005) under the same service name with different IDs (`note-card-service-3004`, `note-card-service-3005`). The `INSTANCE_ID` env var is drawn on the card and sent in the `X-Served-By` header. The gateway only forwards `Content-Type`, so that header is visible only when calling an instance directly.
 - **Database**: todo-service uses PostgreSQL via the `pg` package with the `DATABASE_URL` env var. It creates the `todos` table (`id`, `title`, `completed`) on startup, retrying 5 times 2s apart while the container starts.
 - **Express CJS interop**: Express 5 is still CJS. `esModuleInterop: true` and `verbatimModuleSyntax: false` in the base tsconfig enable `import express from 'express'` under nodenext.
