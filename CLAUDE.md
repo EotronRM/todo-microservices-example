@@ -49,7 +49,7 @@ cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost bun run dev
 
 The web UI (`web/`) is a Vite + React + Tailwind app. `cd web && bun run dev` serves it on `:5173` and proxies `/api` to the gateway on `localhost:3000`. `bun run build` type-checks with `tsc` and bundles to `web/dist/`. Don't scaffold or extend it with tools that import the `typescript` package (see TypeScript 7 below).
 
-No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway and the `web` container against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`). `saga-orchestration.http` and `saga-choreography.http` cover the sagas.
+No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway and the `web` container against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`). On this branch the smoke script also runs both sagas, including their failure paths, and `saga-orchestration.http` and `saga-choreography.http` cover them for manual testing.
 
 ## Architecture
 

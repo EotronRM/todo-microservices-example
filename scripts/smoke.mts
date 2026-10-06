@@ -49,9 +49,9 @@ async function poll<T>(fn: () => Promise<T>, done: (v: T) => boolean, timeoutMs:
 // --- 1. Wait until every service behind the gateway is discoverable ---
 // The gateway answers 503 while a service isn't registered or passing its health
 // check yet. Any other status means the request reached the service (note-card
-// answers 404 for an unknown todo).
+// answers 404 for an unknown todo, saga-orchestrator for an unknown saga).
 
-const routes = ['/api/todos', '/api/users/1', '/api/note-card/0'];
+const routes = ['/api/todos', '/api/users/1', '/api/note-card/0', '/api/saga/status/none'];
 for (const route of routes) {
   const r = await poll(() => json(route), (r) => r.status !== 0 && r.status !== 503, READY_TIMEOUT_MS);
   const ok = r.status !== 0 && r.status !== 503;
@@ -93,7 +93,37 @@ for (const port of [3004, 3005]) {
   check(`note-card instance on :${port} responds`, res?.status === 200, `X-Served-By ${res?.headers.get('x-served-by')}`);
 }
 
-// --- 5. Web UI ---
+// --- 5. Orchestration saga ---
+
+const isDone = (r: { body: any }) => ['COMPLETED', 'FAILED'].includes(r.body?.step);
+
+const ok = await json('/api/saga/create-full-todo', { method: 'POST', body: JSON.stringify({ title: 'Saga smoke test', userId: 1 }) });
+check('POST /api/saga/create-full-todo is accepted', ok.status === 202 && Boolean(ok.body?.sagaId), `status ${ok.status}`);
+const okState = await poll(() => json(`/api/saga/status/${ok.body?.sagaId}`), isDone, 30_000);
+check('saga for user 1 reaches COMPLETED', okState.body?.step === 'COMPLETED', `step ${okState.body?.step}`);
+check('saga-created todo exists', (await json(`/api/todos/${okState.body?.todoId}`)).status === 200);
+await json(`/api/todos/${okState.body?.todoId}`, { method: 'DELETE' });
+
+const bad = await json('/api/saga/create-full-todo', { method: 'POST', body: JSON.stringify({ title: 'Saga compensation', userId: 999 }) });
+const badState = await poll(() => json(`/api/saga/status/${bad.body?.sagaId}`), isDone, 30_000);
+check('saga for unknown user 999 reaches FAILED', badState.body?.step === 'FAILED', `step ${badState.body?.step}`);
+const deleted = await poll(() => json(`/api/todos/${badState.body?.todoId}`), (r) => r.status === 404, 10_000);
+check('compensation deletes the todo', deleted.status === 404, `status ${deleted.status}`);
+
+// --- 6. Choreography saga ---
+
+const notAssigning = (r: { body: any }) => r.body?.status !== 'assigning';
+
+const assign = await json(`/api/todos/${id}/assign`, { method: 'PUT', body: JSON.stringify({ userId: 1 }) });
+check('PUT /api/todos/:id/assign is accepted', assign.status === 202, `status ${assign.status}`);
+const assigned = await poll(() => json(`/api/todos/${id}`), notAssigning, 15_000);
+check('assigning to user 1 ends assigned', assigned.body?.status === 'assigned', `status ${assigned.body?.status}`);
+
+await json(`/api/todos/${id}/assign`, { method: 'PUT', body: JSON.stringify({ userId: 999 }) });
+const rolledBack = await poll(() => json(`/api/todos/${id}`), notAssigning, 15_000);
+check('assigning to unknown user 999 is rolled back', rolledBack.body?.status === 'assignment_failed' && rolledBack.body?.user_id === null, `status ${rolledBack.body?.status}, user_id ${rolledBack.body?.user_id}`);
+
+// --- 7. Web UI ---
 // nginx serves the React bundle and proxies /api to the gateway on the same origin.
 
 const page = await fetch(WEB, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(() => null);
@@ -103,7 +133,7 @@ check('web UI serves index.html', page?.status === 200 && html.includes('id="roo
 const proxied = await fetch(`${WEB}/api/todos`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(() => null);
 check('web UI proxies /api to the gateway', proxied?.status === 200, `status ${proxied?.status}`);
 
-// --- 6. Cleanup ---
+// --- 8. Cleanup ---
 
 check('DELETE /api/todos/:id', (await json(`/api/todos/${id}`, { method: 'DELETE' })).status === 200);
 check('deleted todo is 404', (await json(`/api/todos/${id}`)).status === 404);
