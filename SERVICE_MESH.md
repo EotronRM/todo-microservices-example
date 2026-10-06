@@ -289,28 +289,19 @@ This is useful for verifying that all queues have active consumers and no messag
 
 ## Known Issues
 
-### RabbitMQ consumers lost after sidecar injection restart
+### RabbitMQ connections drop during sidecar injection
 
-**Symptom:** Saga workflows get stuck (e.g. stuck at `VALIDATING_USER`). The RabbitMQ management UI shows queues with 0 consumers and messages piling up.
+Step 7 (`kubectl rollout restart`) restarts every pod in the namespace, rabbitmq included, so every service loses its RabbitMQ connection. The services reconnect by themselves: `startRabbit()` in `shared/rabbitmq.ts` retries with backoff (up to 30s between attempts) and re-attaches the consumers, so no second restart is needed. The service logs show `[rabbitmq] Connection lost` followed by `[rabbitmq] Reconnected`.
 
-**Cause:** When Step 7 (`kubectl rollout restart`) restarts pods to inject Linkerd sidecars, the existing RabbitMQ TCP connections are dropped. The `@cloudamqp/amqp-client` library does not auto-reconnect, so the consumers are silently lost even though the service logs say "RabbitMQ consumers ready" (that message was printed before the restart).
+Messages published while a service is disconnected are lost, so a saga started during the restart can stay stuck at its first step. Start it again once all pods are ready.
 
-**Fix:** Restart the affected deployments again after Linkerd injection is complete:
-
-```bash
-kubectl rollout restart deployment -n todo-app
-kubectl rollout status deployment -n todo-app --timeout=120s
-```
-
-**Verify** by checking consumer counts:
+**Verify** that the consumers are back:
 
 ```bash
 kubectl exec deployment/rabbitmq -n todo-app -c rabbitmq -- rabbitmqctl list_queues name consumers messages
 ```
 
-Every queue should show at least 1 consumer and 0 pending messages.
-
-**Note:** This is a one-time issue that happens during initial Linkerd setup. It does not recur during normal operation.
+Every queue should show at least 1 consumer, except `choreography.todo.assignment.rolledback` and `choreography.notification.sent`, which nothing consumes by design. If a queue still shows 0 consumers a minute after the pods are ready, restart the deployment that should consume it.
 
 ## Manifest Files
 

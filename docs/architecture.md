@@ -506,4 +506,4 @@ sequenceDiagram
 > [!NOTE]
 > Linkerd 2.16+ reads HTTPRoute retry settings from the `retry.linkerd.io/http` and `retry.linkerd.io/limit` annotations ([docs](https://linkerd.io/2/reference/retries/)). The `retry:` block under `spec.rules` in this manifest isn't part of that API. Check that retries are actually applied before relying on the flow above.
 
-[`SERVICE_MESH.md`](../SERVICE_MESH.md#known-issues) describes a known issue: restarting pods to inject the sidecars drops their RabbitMQ consumers.
+Injecting the sidecars restarts every pod, rabbitmq included, so all RabbitMQ connections drop; the services reconnect by themselves. [`SERVICE_MESH.md`](../SERVICE_MESH.md#known-issues) explains how to check that the consumers are back.
