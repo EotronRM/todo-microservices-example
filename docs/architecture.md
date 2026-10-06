@@ -207,6 +207,8 @@ The serving instance's ID is drawn on the card. The gateway copies only `Content
 
 Every service except the gateway opens an AMQP connection on startup and calls `setupExchanges()` in [`shared/rabbitmq.ts`](../shared/rabbitmq.ts). That call declares both exchanges and one durable queue per routing key (`saga.<key>` and `choreography.<key>`). It is idempotent, so startup order doesn't matter. Consumers use manual acks with `prefetch(1)`. If a handler throws, its message is nacked without requeue, which drops it.
 
+Connections recover by themselves. If the broker restarts, every service reconnects with backoff (2s, 4s, … up to 30s) and attaches its consumers to the new channel. Messages published while a service is disconnected are dropped and logged.
+
 Each routing key is bound to exactly one queue, so each message is handled by exactly one consumer. When several instances read the same queue they compete for messages; both note-card instances consume `saga.cmd.notecard.generate`. The topic exchange therefore behaves like a direct one: a second subscriber to an event would need its own queue.
 
 The message contracts live in [`shared/saga-types.ts`](../shared/saga-types.ts):

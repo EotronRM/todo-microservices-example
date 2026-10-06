@@ -7,11 +7,10 @@ import {
 } from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
 import {
-  connectRabbit,
-  createChannel,
-  setupExchanges,
+  startRabbit,
   publishMessage,
   consumeQueue,
+  type AMQPChannel,
 } from '../../shared/rabbitmq.js';
 import {
   ORCHESTRATION_EXCHANGE,
@@ -117,7 +116,7 @@ app.post('/todos', async (req, res) => {
 
 // --- Choreography Saga: Assign todo to user ---
 
-let rabbitChannel: Awaited<ReturnType<typeof createChannel>> | null = null;
+let rabbitChannel: AMQPChannel | null = null;
 
 app.put('/todos/:id/assign', async (req, res) => {
   const id = parseInt(req.params.id);
@@ -170,10 +169,8 @@ app.delete('/todos/:id', async (req, res) => {
 
 // --- Orchestration Saga: RabbitMQ command handlers ---
 
-async function setupRabbitMQ() {
-  const connection = await connectRabbit();
-  const channel = await createChannel(connection);
-  await setupExchanges(channel);
+// Runs at startup and again after every reconnect (see startRabbit)
+async function attachConsumers(channel: AMQPChannel) {
 
   // Handle: create a todo (orchestration command)
   await consumeQueue(
@@ -269,13 +266,12 @@ async function setupRabbitMQ() {
 
   rabbitChannel = channel;
   console.log('[todo-service] RabbitMQ consumers ready');
-  return channel;
 }
 
 app.listen(PORT, async () => {
   console.log(`${SERVICE_NAME} running on port ${PORT}`);
   await initDb();
-  await setupRabbitMQ();
+  await startRabbit(attachConsumers);
   await registerService(SERVICE_NAME, SERVICE_ADDRESS, PORT);
   setupGracefulShutdown(SERVICE_NAME, PORT);
 });

@@ -6,11 +6,10 @@ import {
 } from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
 import {
-  connectRabbit,
-  createChannel,
-  setupExchanges,
+  startRabbit,
   publishMessage,
   consumeQueue,
+  type AMQPChannel,
 } from '../../shared/rabbitmq.js';
 import {
   SagaStep,
@@ -73,7 +72,7 @@ app.get('/saga/status/:sagaId', (req, res) => {
 
 // --- RabbitMQ Setup & Reply Handlers ---
 
-let channel: Awaited<ReturnType<typeof createChannel>> | null = null;
+let channel: AMQPChannel | null = null;
 
 function applyTransition(
   sagaId: string,
@@ -91,10 +90,9 @@ function applyTransition(
   return updated;
 }
 
-async function setupRabbitMQ() {
-  const connection = await connectRabbit();
-  channel = await createChannel(connection);
-  await setupExchanges(channel);
+// Runs at startup and again after every reconnect (see startRabbit)
+async function attachConsumers(ch: AMQPChannel) {
+  channel = ch;
 
   // Listen for replies from downstream services
   await consumeQueue(
@@ -144,7 +142,7 @@ async function setupRabbitMQ() {
 
 app.listen(PORT, async () => {
   console.log(`${SERVICE_NAME} running on port ${PORT}`);
-  await setupRabbitMQ();
+  await startRabbit(attachConsumers);
   await registerService(SERVICE_NAME, SERVICE_ADDRESS, PORT);
   setupGracefulShutdown(SERVICE_NAME, PORT);
 });

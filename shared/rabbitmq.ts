@@ -67,6 +67,68 @@ export async function setupExchanges(channel: AMQPChannel): Promise<void> {
   console.log('[rabbitmq] Exchanges and queues ready');
 }
 
+export type { AMQPChannel };
+
+// --- Connection lifecycle with automatic reconnect ---
+
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+
+/**
+ * Connects (with connectRabbit's startup retries), declares the exchanges and
+ * queues, then calls `attach` with a fresh channel so the service can register
+ * its consumers. If the connection or channel is lost later, it reconnects with
+ * backoff and calls `attach` again on the new channel. The client library
+ * doesn't reconnect on its own, so without this a broker restart silently
+ * leaves a service running with no consumers.
+ */
+export async function startRabbit(
+  attach: (channel: AMQPChannel) => Promise<void>
+): Promise<void> {
+  let reconnecting = false;
+
+  async function open(connection: AMQPClient): Promise<void> {
+    const channel = await createChannel(connection);
+    await setupExchanges(channel);
+    await attach(channel);
+
+    const lost = (reason: string) => {
+      if (reconnecting) return;
+      reconnecting = true;
+      console.error(`[rabbitmq] Connection lost (${reason}), reconnecting...`);
+      // Ignore further events from the old connection and make sure it's closed
+      connection.onerror = () => {};
+      channel.onerror = () => {};
+      connection.close().catch(() => {});
+      void reconnect();
+    };
+    connection.onerror = (err) => lost(err.message);
+    channel.onerror = (reason) => lost(`channel closed: ${reason}`);
+  }
+
+  async function reconnect(): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      const delay = Math.min(RECONNECT_BASE_DELAY_MS * attempt, RECONNECT_MAX_DELAY_MS);
+      await new Promise((r) => setTimeout(r, delay));
+      const connection = new AMQPClient(RABBITMQ_URL);
+      try {
+        await connection.connect();
+        await open(connection);
+        reconnecting = false;
+        console.log(`[rabbitmq] Reconnected (attempt ${attempt})`);
+        return;
+      } catch (err) {
+        connection.close().catch(() => {});
+        console.log(
+          `[rabbitmq] Reconnect attempt ${attempt} failed: ${(err as Error).message}`
+        );
+      }
+    }
+  }
+
+  await open(await connectRabbit());
+}
+
 // --- Publish ---
 
 export function publishMessage(
@@ -75,9 +137,17 @@ export function publishMessage(
   routingKey: string,
   payload: object
 ): void {
-  channel.basicPublish(exchange, routingKey, JSON.stringify(payload), {
-    deliveryMode: 2,
-  });
+  // basicPublish rejects when the channel is closed (e.g. while reconnecting).
+  // Log it instead of leaving an unhandled rejection that would crash the process.
+  channel
+    .basicPublish(exchange, routingKey, JSON.stringify(payload), {
+      deliveryMode: 2,
+    })
+    .catch((err) =>
+      console.error(
+        `[rabbitmq] Publish to ${exchange} (${routingKey}) failed: ${(err as Error).message}`
+      )
+    );
 }
 
 // --- Consume ---

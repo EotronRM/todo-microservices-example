@@ -83,7 +83,7 @@ note-card-service -> [Consul|etcd] -> todo-service (fetches todo to render as PN
 
 All services except `web` expose `/health` for liveness checks (`shared/healthcheck.ts`).
 
-**Shared module** (`shared/`): `consul.ts`, `etcd.ts`, `discovery.ts` (adapter that picks the backend from `DISCOVERY_BACKEND` with a top-level `await import()`), `healthcheck.ts` (health route factory), `rabbitmq.ts` (connection, channel, publish and consume helpers), `saga-types.ts` (message interfaces and exchange/routing-key constants) and `tsconfig.base.json`. Services import from `discovery.js`, never from a backend directly. Each service's `tsc` compiles `shared/` inline.
+**Shared module** (`shared/`): `consul.ts`, `etcd.ts`, `discovery.ts` (adapter that picks the backend from `DISCOVERY_BACKEND` with a top-level `await import()`), `healthcheck.ts` (health route factory), `rabbitmq.ts` (connection with automatic reconnect, publish and consume helpers), `saga-types.ts` (message interfaces and exchange/routing-key constants) and `tsconfig.base.json`. Services import from `discovery.js`, never from a backend directly. Each service's `tsc` compiles `shared/` inline.
 
 ### Service Discovery: Consul vs etcd
 
@@ -112,7 +112,7 @@ How the messaging is wired:
 - `shared/saga-types.ts` is the single source of truth for routing keys (`ORK`, `CRK`) and payload types. Every service calls `setupExchanges()` at startup, which declares one durable queue per routing key (`saga.<key>` or `choreography.<key>`). Adding a key to `ORK` or `CRK` is enough to create and bind its queue.
 - With one queue per key, each message is handled by exactly one consumer. Several instances on the same queue compete for messages; both note-card instances consume `saga.cmd.notecard.generate`. A second subscriber to the same event would need its own queue.
 - Consumers use manual ack with `prefetch(1)`. If a handler throws, the message is nacked **without requeue**, so it is dropped.
-- `connectRabbit()` only retries at startup (10 tries, 2s apart). There is no reconnect logic, so if the broker connection drops later, the service keeps running with no consumers until it's restarted.
+- Each service calls `startRabbit(attachConsumers)`. It connects with 10 startup retries (2s apart), then, whenever the connection or channel is lost, reconnects with backoff (2s, 4s, … capped at 30s) and calls `attachConsumers()` again on the new channel. Publishing while disconnected fails and is only logged (`publishMessage` catches it); there's no outbox, so a saga started during an outage stalls at its first step.
 - `todo.assignment.rolledback` and `notification.sent` are published, but nothing consumes them.
 - Startup order in each service is: database (todo-service only), then RabbitMQ, then discovery registration. A service only becomes discoverable once its consumers are attached.
 - In all three compose files, postgres and rabbitmq have healthchecks (`pg_isready`, `rabbitmq-diagnostics check_port_connectivity`), and the services that need them wait for `service_healthy`, so the in-code retry loops normally succeed on the first try. Consul only starts returning a service after its first passing check, which can take up to 10s, so the gateway may answer 503 for a few seconds after `up`.

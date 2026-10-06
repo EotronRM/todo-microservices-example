@@ -2,11 +2,10 @@ import express from 'express';
 import { registerService, setupGracefulShutdown } from '../../shared/discovery.js';
 import { healthRoute } from '../../shared/healthcheck.js';
 import {
-  connectRabbit,
-  createChannel,
-  setupExchanges,
+  startRabbit,
   publishMessage,
   consumeQueue,
+  type AMQPChannel,
 } from '../../shared/rabbitmq.js';
 import {
   ORCHESTRATION_EXCHANGE,
@@ -33,10 +32,8 @@ app.post('/notify', (req, res) => {
 
 // --- Orchestration Saga: RabbitMQ command handlers ---
 
-async function setupRabbitMQ() {
-  const connection = await connectRabbit();
-  const channel = await createChannel(connection);
-  await setupExchanges(channel);
+// Runs at startup and again after every reconnect (see startRabbit)
+async function attachConsumers(channel: AMQPChannel) {
 
   // Handle: send notification (orchestration command)
   await consumeQueue(
@@ -73,12 +70,11 @@ async function setupRabbitMQ() {
   );
 
   console.log('[notification-service] RabbitMQ consumers ready');
-  return channel;
 }
 
 app.listen(PORT, async () => {
   console.log(`${SERVICE_NAME} running on port ${PORT}`);
-  await setupRabbitMQ();
+  await startRabbit(attachConsumers);
   await registerService(SERVICE_NAME, SERVICE_ADDRESS, PORT);
   setupGracefulShutdown(SERVICE_NAME, PORT);
 });
