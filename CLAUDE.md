@@ -94,7 +94,8 @@ Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
 
 ## Key Technical Patterns
 
-- **ESM + TypeScript 6**: All services use `"type": "module"` with `module: "nodenext"`. Relative imports require `.js` extensions even in `.ts` files.
+- **ESM + TypeScript 7**: All services use `"type": "module"` with `module: "nodenext"`. Relative imports require `.js` extensions even in `.ts` files.
+- **TypeScript 7 toolchain**: `tsc` is the native Go compiler (`typescript@7`). It ships no `tsserver` and, in 7.0, no programmatic API, so tools that import the `typescript` package (ts-jest, typescript-eslint, and similar) won't work with it yet. `tsx` is unaffected because it transpiles with esbuild.
 - **Shared code compilation**: Each service's `tsconfig.json` sets `rootDir: ".."` and includes `"../shared/**/*"`. Output lands in `dist/shared/` and `dist/<service>/src/`.
 - **Dockerfiles**: multi-stage. The `oven/bun:1-alpine` stage copies `shared/` and the service into `/app` to mirror the repo layout, runs `bun install --frozen-lockfile` for the service only, symlinks the service's `node_modules` to `/app/node_modules` so `shared/` resolves its imports from there, and runs `bunx tsc`. The `node:20-alpine` runtime stage copies only `dist/` and `node_modules/`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card runtime image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
 - **Multi-instance**: note-card-service runs 2 instances (ports 3004, 3005) under the same service name with different IDs (`note-card-service-3004`, `note-card-service-3005`). The `INSTANCE_ID` env var is drawn on the card and sent in the `X-Served-By` header. The gateway only forwards `Content-Type`, so that header is visible only when calling an instance directly.

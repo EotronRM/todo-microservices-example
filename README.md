@@ -1,6 +1,6 @@
 # Microservices Demo
 
-A microservices architecture demo built with Express 5, TypeScript 6, and Docker Compose. Features pluggable service discovery (Consul or etcd), PostgreSQL persistence, and multi-instance load distribution.
+A microservices architecture demo built with Express 5, TypeScript 7, and Docker Compose. Features pluggable service discovery (Consul or etcd), PostgreSQL persistence, and multi-instance load distribution.
 
 ## Requirements
 
