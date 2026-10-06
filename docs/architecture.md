@@ -1,6 +1,6 @@
 # Architecture
 
-> This copy describes the **`feature/kubernetes`** branch. Each feature branch has its own copy of this file, extended with what that branch adds:
+> This copy describes the **`feature/k8s-service-mesh`** branch. Each feature branch has its own copy of this file, extended with what that branch adds:
 >
 > | Branch | Adds |
 > |---|---|
@@ -163,7 +163,7 @@ sequenceDiagram
     Note over K,P: a terminating pod is removed from the endpoints<br/>if the liveness probe fails, kubelet restarts the container
 ```
 
-The load-balancing decision moves from the caller to kube-proxy, which picks a pod **per connection**, not per request. Node's `fetch` keeps connections alive and reuses them, so a burst of requests from one caller can all land on the same note-card pod.
+The load-balancing decision moves from the caller to kube-proxy, which picks a pod **per connection**, not per request. Node's `fetch` keeps connections alive and reuses them, so a burst of requests from one caller can all land on the same note-card pod. Once Linkerd is installed, its proxy balances per request instead. See [Service mesh (Linkerd)](#service-mesh-linkerd).
 
 ### Comparison
 
@@ -433,3 +433,77 @@ flowchart LR
 | Load balancing | Random pick in the caller | kube-proxy, per connection |
 | Reachable from the host | Every service | Only api-gateway (NodePort `30000`) and web (NodePort `30080`) |
 | PostgreSQL data | No named volume | PersistentVolumeClaim (`1Gi`) |
+
+## Service mesh (Linkerd)
+
+[`SERVICE_MESH.md`](../SERVICE_MESH.md) installs Linkerd on top of the Kubernetes deployment. The `todo-app` namespace carries `linkerd.io/inject: enabled`, so every pod gets a `linkerd-proxy` sidecar when it's created. The application code doesn't change.
+
+```mermaid
+flowchart LR
+    subgraph cp["Linkerd control plane (namespace linkerd)"]
+        ident["identity<br/>issues mTLS certificates"]
+        dest["destination<br/>endpoints and route policy"]
+        inj["proxy-injector<br/>adds the sidecar at pod creation"]
+    end
+
+    subgraph ns["namespace todo-app (linkerd.io/inject: enabled)"]
+        subgraph gwpod["api-gateway pod"]
+            gwapp["api-gateway"] --> gwproxy["linkerd-proxy"]
+        end
+        subgraph todopod["todo-service pod"]
+            todoproxy["linkerd-proxy"] --> todoapp["todo-service"]
+        end
+    end
+
+    subgraph viz["linkerd-viz"]
+        prom["Prometheus"] --> dash["dashboard, tap, top"]
+    end
+
+    gwproxy ==>|"mTLS"| todoproxy
+    ident -.-> gwproxy & todoproxy
+    dest -.-> gwproxy
+    inj -.-> ns
+    prom -.->|"scrape metrics"| gwproxy & todoproxy
+```
+
+- Only two pods are drawn. After `kubectl rollout restart`, every pod in `todo-app` has a sidecar, including postgres and rabbitmq.
+- The apps still call `http://todo-service:80`, and the local proxy intercepts the connection. The two proxies encrypt traffic between themselves with mTLS. That includes AMQP and PostgreSQL connections, but retries and timeouts only apply to HTTP.
+- The calling side's proxy picks the target pod **per request** (EWMA, least loaded), which replaces kube-proxy's per-connection choice.
+
+### Request path with route policies
+
+[`k8s/linkerd/retry-policy.yaml`](../k8s/linkerd/retry-policy.yaml) attaches an `HTTPRoute` to two Services:
+
+| HTTPRoute | Service | Matches | Timeout | Retries |
+|---|---|---|---|---|
+| `todo-service-route` | `todo-service:80` | `GET` | 5s | Up to 2, on 500, 502 or 503 |
+| `user-service-route` | `user-service:80` | `GET` | 3s | Up to 2, on 500, 502 or 503 |
+
+The calling side's proxy applies the policy, so the application never sees the retry:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GA as api-gateway
+    participant GP as linkerd-proxy (gateway pod)
+    participant TP as linkerd-proxy (todo pod)
+    participant TA as todo-service
+
+    GA->>GP: GET http://todo-service/todos (plain HTTP)
+    Note over GP: route todo-service-route matches GET<br/>5s timeout starts, pick a pod (EWMA)
+    GP->>TP: GET /todos over mTLS
+    TP->>TA: GET /todos
+    TA-->>TP: 503
+    TP-->>GP: 503
+    Note over GP: 503 is retryable, attempt 1 of 2
+    GP->>TP: GET /todos over mTLS
+    TP->>TA: GET /todos
+    TA-->>TP: 200
+    TP-->>GP: 200
+    GP-->>GA: 200
+```
+
+> [!NOTE]
+> Linkerd 2.16+ reads HTTPRoute retry settings from the `retry.linkerd.io/http` and `retry.linkerd.io/limit` annotations ([docs](https://linkerd.io/2/reference/retries/)). The `retry:` block under `spec.rules` in this manifest isn't part of that API. Check that retries are actually applied before relying on the flow above.
+
+[`SERVICE_MESH.md`](../SERVICE_MESH.md#known-issues) describes a known issue: restarting pods to inject the sidecars drops their RabbitMQ consumers.
