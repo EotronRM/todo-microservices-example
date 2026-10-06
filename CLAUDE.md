@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The feature branches are stacked: `main` → `feature/saga-pattern` → `feature/kubernetes` → `feature/k8s-service-mesh`. Each branch adds one concept on top of the previous one. This file and `docs/architecture.md` describe **only the code on the current branch**, and each later branch carries an extended copy of both. Carry changes up the stack with `git rebase`, not merge commits.
 
-This copy describes `feature/saga-pattern`. On top of `main` it adds RabbitMQ, the saga-orchestrator and both saga implementations. There is no `k8s/` directory or Kubernetes discovery backend here.
+This copy describes `feature/kubernetes`. On top of `feature/saga-pattern` it adds Kubernetes manifests (`k8s/`, run on minikube) and a `kubernetes` discovery backend. There is no Linkerd service mesh here.
 
 ## Build & Run Commands
 
@@ -35,7 +35,15 @@ docker compose -f docker-compose.etcd.yml up --build
 
 # Rebuild a single service
 docker compose build api-gateway && docker compose up
+
+# Full stack with Kubernetes (minikube); details in KUBERNETES.md
+minikube start
+eval $(minikube docker-env) && docker compose build
+kubectl apply -f k8s/
+minikube service api-gateway -n todo-app --url
 ```
+
+The manifests reference the images that `docker compose build` produces, named `todo-microservices-example-<service>:latest`, with `imagePullPolicy: Never`. That prefix is the Compose project name, which defaults to the directory name. If the repo is cloned under another name, build with `COMPOSE_PROJECT_NAME=todo-microservices-example`, or the pods can't find their images. note-card-service uses the `todo-microservices-example-note-card-service-1` image.
 
 The Docker builds run `bun install --frozen-lockfile`. After changing dependencies, commit the updated `bun.lock`, or the image build fails.
 
@@ -53,18 +61,18 @@ No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks 
 
 ## Architecture
 
-Six Express 5 microservices + a shared utility module + PostgreSQL + RabbitMQ + a React web UI, run with Docker Compose and pluggable service discovery (Consul or etcd). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`. `SAGA_README.md` explains the two sagas with curl examples, and `GLOSSARY.md` defines the message broker terms.
+Six Express 5 microservices + a shared utility module + PostgreSQL + RabbitMQ + a React web UI, run with Docker Compose or Kubernetes, with pluggable service discovery (Consul, etcd or Kubernetes DNS). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`. `SAGA_README.md` explains the two sagas with curl examples, `GLOSSARY.md` defines the message broker terms, and `KUBERNETES.md` covers the cluster setup.
 
 ```
 Browser -> web:8080 (nginx) -> api-gateway:3000
 
-Client -> api-gateway:3000 -> [Consul|etcd] -> todo-service:3001 (PostgreSQL-backed)
-                                            -> user-service:3002
-                                            -> note-card-service:3004/3005 (2 instances)
-                                            -> saga-orchestrator:3010
+Client -> api-gateway:3000 -> [discovery] -> todo-service:3001 (PostgreSQL-backed)
+                                          -> user-service:3002
+                                          -> note-card-service:3004/3005 (2 instances)
+                                          -> saga-orchestrator:3010
 
-todo-service      -> [Consul|etcd] -> notification-service:3003 (on todo creation)
-note-card-service -> [Consul|etcd] -> todo-service (fetches todo to render as PNG)
+todo-service      -> [discovery] -> notification-service:3003 (on todo creation)
+note-card-service -> [discovery] -> todo-service (fetches todo to render as PNG)
 
 [RabbitMQ] carries the saga messages between every service except api-gateway
 ```
@@ -83,22 +91,33 @@ note-card-service -> [Consul|etcd] -> todo-service (fetches todo to render as PN
 
 All services except `web` expose `/health` for liveness checks (`shared/healthcheck.ts`).
 
-**Shared module** (`shared/`): `consul.ts`, `etcd.ts`, `discovery.ts` (adapter that picks the backend from `DISCOVERY_BACKEND` with a top-level `await import()`), `healthcheck.ts` (health route factory), `rabbitmq.ts` (connection with automatic reconnect, publish and consume helpers), `saga-types.ts` (message interfaces and exchange/routing-key constants) and `tsconfig.base.json`. Services import from `discovery.js`, never from a backend directly. Each service's `tsc` compiles `shared/` inline.
+**Shared module** (`shared/`): `consul.ts`, `etcd.ts`, `kubernetes.ts`, `discovery.ts` (adapter that picks the backend from `DISCOVERY_BACKEND` with a top-level `await import()`), `healthcheck.ts` (health route factory), `rabbitmq.ts` (connection with automatic reconnect, publish and consume helpers), `saga-types.ts` (message interfaces and exchange/routing-key constants) and `tsconfig.base.json`. Services import from `discovery.js`, never from a backend directly. Each service's `tsc` compiles `shared/` inline.
 
-### Service Discovery: Consul vs etcd
+### Service Discovery: Consul vs etcd vs Kubernetes
 
-Both backends do client-side discovery: the caller fetches all live instances and picks one at random.
+Consul and etcd do client-side discovery: the caller fetches all live instances and picks one at random. The Kubernetes backend leaves that to the platform.
 
-| Aspect | Consul | etcd |
-|--------|--------|------|
-| **Type** | Purpose-built service registry | Distributed key-value store |
-| **Health checking** | Server-side: Consul polls `/health` every 10s | Client-side: services renew a lease (TTL=15s) every 5s |
-| **Registration** | Single API call with health check config | 3 steps: grant lease, put key, start keepalive loop |
-| **Discovery** | `GET /v1/health/service/{name}?passing=true` | Prefix range query on `/services/{name}/instances/` |
-| **Failure detection** | Consul stops returning unhealthy instances | Lease expires, key auto-deleted |
-| **Client state** | Stateless (each call is independent) | Stateful (must track lease ID and keepalive timer) |
+| Aspect | Consul | etcd | Kubernetes |
+|--------|--------|------|-----------|
+| **Type** | Purpose-built service registry | Distributed key-value store | Container orchestrator with built-in DNS |
+| **Health checking** | Server-side: Consul polls `/health` every 10s | Client-side: services renew a lease (TTL=15s) every 5s | kubelet liveness and readiness probes on `/health` |
+| **Registration** | Single API call with health check config | 3 steps: grant lease, put key, start keepalive loop | None: the Deployment and Service define it |
+| **Discovery** | `GET /v1/health/service/{name}?passing=true` | Prefix range query on `/services/{name}/instances/` | `discoverService(name)` returns `{address: name, port: 80}`, and DNS does the rest |
+| **Load balancing** | Random pick in the caller | Random pick in the caller | kube-proxy, per connection (not per request) |
+| **Failure detection** | Consul stops returning unhealthy instances | Lease expires, key auto-deleted | Pod removed from the Service's endpoints |
+| **Client state** | Stateless (each call is independent) | Stateful (must track lease ID and keepalive timer) | Stateless |
 
-Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
+Consul and etcd deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`. In `kubernetes.ts`, register and deregister are no-ops, and shutdown just exits.
+
+### Kubernetes deployment (`k8s/`)
+
+- Everything runs in the `todo-app` namespace (`00-namespace.yaml` sorts first, so `kubectl apply -f k8s/` creates it before the rest).
+- Each application is a Deployment plus a ClusterIP Service that maps port `80` to the container port, which is why the backend returns port `80`. Only api-gateway is exposed outside the cluster (NodePort `30000`).
+- note-card-service is a single Deployment with `replicas: 2`. `INSTANCE_ID` isn't set in its manifest, so both pods draw "instance 1" on the card.
+- Application pods have liveness (every 10s) and readiness (every 5s) probes on `/health`. postgres (with a 1Gi PersistentVolumeClaim) and rabbitmq (`rabbitmq:4-management-alpine`) have no probes.
+- Nothing orders startup. A service whose PostgreSQL or RabbitMQ retries run out exits, and Kubernetes restarts it, so a few restarts right after `kubectl apply` are expected.
+- There's no Consul or etcd in the cluster. The manifests set `DISCOVERY_BACKEND=kubernetes`.
+- RabbitMQ management UI: `kubectl port-forward svc/rabbitmq -n todo-app 15672:15672`, then open http://localhost:15672 (guest/guest).
 
 ### Saga Pattern (RabbitMQ)
 
@@ -132,7 +151,7 @@ How the messaging is wired:
 
 | Variable | Used by | Purpose |
 |----------|---------|---------|
-| `DISCOVERY_BACKEND` | All services | `consul` (default) or `etcd`: selects the service discovery backend |
+| `DISCOVERY_BACKEND` | All services | `consul` (default), `etcd` or `kubernetes`: selects the service discovery backend |
 | `CONSUL_HOST` | All services | Consul API hostname (default: `localhost`) |
 | `CONSUL_PORT` | All services | Consul API port (default: `8500`) |
 | `ETCD_HOST` | All services | etcd API hostname (default: `localhost`) |
