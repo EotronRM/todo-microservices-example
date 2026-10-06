@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The feature branches are stacked: `main` → `feature/saga-pattern` → `feature/kubernetes` → `feature/k8s-service-mesh`. Each branch adds one concept on top of the previous one. This file and `docs/architecture.md` describe **only the code on the current branch**, and each later branch carries an extended copy of both. Carry changes up the stack with `git rebase`, not merge commits.
 
-This copy describes `feature/kubernetes`. On top of `feature/saga-pattern` it adds Kubernetes manifests (`k8s/`, run on minikube) and a `kubernetes` discovery backend. There is no Linkerd service mesh here.
+This copy describes `feature/k8s-service-mesh`, the top of the stack. On top of `feature/kubernetes` it adds the Linkerd service mesh: sidecar injection for the `todo-app` namespace and HTTP route policies in `k8s/linkerd/`. Application code is unchanged.
 
 ## Build & Run Commands
 
@@ -42,7 +42,16 @@ eval $(minikube docker-env) && docker compose build
 kubectl apply -f k8s/
 minikube service api-gateway -n todo-app --url
 minikube service web -n todo-app --url
+
+# Service mesh on top: install the Linkerd CLI, CRDs, control plane and viz, then
+# restart the deployments to inject sidecars and apply the route policies.
+# The full step-by-step is in SERVICE_MESH.md.
+kubectl rollout restart deployment -n todo-app
+kubectl apply -f k8s/linkerd/
+linkerd viz stat deployment -n todo-app
 ```
+
+`kubectl apply -f k8s/` doesn't recurse into `k8s/linkerd/`. Those `HTTPRoute` policies need the Linkerd CRDs, so apply them only after Linkerd is installed.
 
 The manifests reference the images that `docker compose build` produces, named `todo-microservices-example-<service>:latest`, with `imagePullPolicy: Never`. That prefix is the Compose project name, which defaults to the directory name. If the repo is cloned under another name, build with `COMPOSE_PROJECT_NAME=todo-microservices-example`, or the pods can't find their images. note-card-service uses the `todo-microservices-example-note-card-service-1` image.
 
@@ -62,7 +71,7 @@ No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks 
 
 ## Architecture
 
-Six Express 5 microservices + a shared utility module + PostgreSQL + RabbitMQ + a React web UI, run with Docker Compose or Kubernetes, with pluggable service discovery (Consul, etcd or Kubernetes DNS). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`. `SAGA_README.md` explains the two sagas with curl examples, `GLOSSARY.md` defines the message broker terms, and `KUBERNETES.md` covers the cluster setup.
+Six Express 5 microservices + a shared utility module + PostgreSQL + RabbitMQ + a React web UI, run with Docker Compose or Kubernetes (optionally meshed with Linkerd), with pluggable service discovery (Consul, etcd or Kubernetes DNS). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`. `SAGA_README.md` explains the two sagas with curl examples, `GLOSSARY.md` defines the message broker terms, `KUBERNETES.md` covers the cluster setup, and `SERVICE_MESH.md` covers Linkerd.
 
 ```
 Browser -> web:8080 (nginx) -> api-gateway:3000
@@ -120,6 +129,13 @@ Consul and etcd deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`. In `
 - There's no Consul or etcd in the cluster. The manifests set `DISCOVERY_BACKEND=kubernetes`.
 - `k8s/web.yaml` sets `API_GATEWAY_URL=http://api-gateway`: the gateway's Service listens on `80`, not the `3000` that `web/Dockerfile` defaults to for compose.
 - RabbitMQ management UI: `kubectl port-forward svc/rabbitmq -n todo-app 15672:15672`, then open http://localhost:15672 (guest/guest).
+
+### Service mesh (Linkerd)
+
+- `k8s/00-namespace.yaml` sets `linkerd.io/inject: enabled`, so once Linkerd is installed, every pod created in `todo-app` gets a `linkerd-proxy` sidecar, including postgres and rabbitmq. Pods that already exist only get it after `kubectl rollout restart`.
+- The apps still call `http://<service>:80`. The proxies add mTLS for all TCP traffic between meshed pods (HTTP, AMQP and PostgreSQL), and per-request load balancing (EWMA) in place of kube-proxy's per-connection choice. `linkerd viz` adds golden metrics.
+- `k8s/linkerd/retry-policy.yaml` defines `HTTPRoute`s (`policy.linkerd.io/v1beta3`) for `GET` on todo-service (5s timeout) and user-service (3s timeout). Each has a `retry:` block (2 retries on 500/502/503). Linkerd 2.16+ reads retries from the `retry.linkerd.io/http` and `retry.linkerd.io/limit` annotations, and that `retry:` block isn't part of its API, so don't assume retries are active until you've verified them.
+- Known issue: the restart that injects the sidecars also drops every RabbitMQ connection, and `shared/rabbitmq.ts` never reconnects. Sagas then hang (for example at `VALIDATING_USER`) while their queues show 0 consumers. Restart the deployments again, then confirm with `kubectl exec deployment/rabbitmq -n todo-app -c rabbitmq -- rabbitmqctl list_queues name consumers messages`.
 
 ### Saga Pattern (RabbitMQ)
 
