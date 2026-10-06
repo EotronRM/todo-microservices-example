@@ -1,0 +1,5 @@
+# Dependencies and build output are installed and compiled inside the image.
+# Copying the host's copies would leak platform-specific binaries (e.g. sharp)
+# and stale builds into the image.
+**/node_modules
+**/dist

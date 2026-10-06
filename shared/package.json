@@ -1,5 +1,12 @@
 {
   "name": "shared",
   "type": "module",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.10.0"
+  }
 }
