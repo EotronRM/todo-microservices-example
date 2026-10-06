@@ -24,6 +24,14 @@ docker compose -f docker-compose.etcd.yml up --build
 
 Once running, the API gateway is available at `http://localhost:3000`.
 
+### Smoke test
+
+With the stack running, check every service end to end through the gateway:
+
+```bash
+bun scripts/smoke.mts
+```
+
 ### Endpoints
 
 | Method | Endpoint | Description |

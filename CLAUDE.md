@@ -48,7 +48,7 @@ docker compose -f docker-compose.etcd.yml up -d postgres etcd
 cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost bun run dev
 ```
 
-No test framework is configured. Exercise the API by hand with the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`).
+No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`).
 
 ## Architecture
 
