@@ -352,3 +352,5 @@ stateDiagram-v2
 | [`docker-compose.infra.yml`](../docker-compose.infra.yml) | Consul | postgres, rabbitmq (`4.2-alpine`, without the management UI) and consul only, for running services locally with `bun run dev` |
 
 Each service registers under its `SERVICE_ADDRESS` (its compose service name), so the registry hands out hostnames on the Docker network. Every container also publishes its port on the host.
+
+postgres and rabbitmq have healthchecks, and the services that use them start only once they report healthy (`depends_on: condition: service_healthy`).

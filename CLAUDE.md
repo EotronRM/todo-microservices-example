@@ -115,6 +115,7 @@ How the messaging is wired:
 - `connectRabbit()` only retries at startup (10 tries, 2s apart). There is no reconnect logic, so if the broker connection drops later, the service keeps running with no consumers until it's restarted.
 - `todo.assignment.rolledback` and `notification.sent` are published, but nothing consumes them.
 - Startup order in each service is: database (todo-service only), then RabbitMQ, then discovery registration. A service only becomes discoverable once its consumers are attached.
+- In all three compose files, postgres and rabbitmq have healthchecks (`pg_isready`, `rabbitmq-diagnostics check_port_connectivity`), and the services that need them wait for `service_healthy`, so the in-code retry loops normally succeed on the first try. Consul only starts returning a service after its first passing check, which can take up to 10s, so the gateway may answer 503 for a few seconds after `up`.
 - Grep the logs for `[ORCHESTRATOR]`, `[SAGA-CMD]` and `[CHOREOGRAPHY]`. The RabbitMQ management UI is at http://localhost:15672 (guest/guest) with `docker-compose.yml`. The infra file's `rabbitmq:4.2-alpine` image doesn't include the UI.
 
 ## Key Technical Patterns
