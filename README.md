@@ -6,7 +6,7 @@ A microservices architecture demo built with Express 5, TypeScript 6, and Docker
 
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 - [Node.js 20+](https://nodejs.org/) (only for local development without Docker)
-- npm (included with Node.js)
+- [Bun](https://bun.sh/) (package manager)
 
 ## Quick Start
 
@@ -82,23 +82,23 @@ note-card-service -> [Service Discovery] -> todo-service (fetches todo to render
 
 ## Local Development (without Docker)
 
-Each service is an independent Node.js project. You need Consul (or etcd) and PostgreSQL running locally.
+Each service is an independent project managed with Bun. You need Consul (or etcd) and PostgreSQL running locally.
 
 ```bash
 # Install the shared module's dependencies (once per clone)
-cd shared && npm install
+cd shared && bun install
 
 # Install dependencies for a service
-cd todo-service && npm install
+cd todo-service && bun install
 
 # Run in development mode (uses tsx for live TypeScript execution)
-npm run dev
+bun run dev
 
 # Build TypeScript to JavaScript
-npm run build
+bun run build
 
 # Run the compiled build
-npm start
+bun run start
 ```
 
 Repeat for each service you want to run.
