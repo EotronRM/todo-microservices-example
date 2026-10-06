@@ -11,6 +11,15 @@ services:
     ports:
       - "5432:5432"
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
   etcd:
     image: bitnamilegacy/etcd:latest
     environment:
@@ -44,9 +53,11 @@ services:
       - ETCD_HOST=etcd
       - SERVICE_ADDRESS=todo-service
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/todos
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - etcd
       - postgres
+      - rabbitmq
 
   user-service:
     build:
@@ -58,8 +69,10 @@ services:
       - DISCOVERY_BACKEND=etcd
       - ETCD_HOST=etcd
       - SERVICE_ADDRESS=user-service
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - etcd
+      - rabbitmq
 
   notification-service:
     build:
@@ -71,8 +84,10 @@ services:
       - DISCOVERY_BACKEND=etcd
       - ETCD_HOST=etcd
       - SERVICE_ADDRESS=notification-service
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - etcd
+      - rabbitmq
 
   note-card-service-1:
     build:
@@ -86,8 +101,10 @@ services:
       - SERVICE_ADDRESS=note-card-service-1
       - PORT=3004
       - INSTANCE_ID=1
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - etcd
+      - rabbitmq
 
   note-card-service-2:
     build:
@@ -101,8 +118,25 @@ services:
       - SERVICE_ADDRESS=note-card-service-2
       - PORT=3005
       - INSTANCE_ID=2
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
       - etcd
+      - rabbitmq
+
+  saga-orchestrator:
+    build:
+      context: .
+      dockerfile: saga-orchestrator/Dockerfile
+    ports:
+      - "3010:3010"
+    environment:
+      - DISCOVERY_BACKEND=etcd
+      - ETCD_HOST=etcd
+      - SERVICE_ADDRESS=saga-orchestrator
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - etcd
+      - rabbitmq
 
   web:
     build:

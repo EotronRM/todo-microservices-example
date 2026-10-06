@@ -27,16 +27,17 @@ bun run build
 # Production (runs dist/<service>/src/index.js)
 bun run start
 
-# Full stack with Docker + Consul
+# Full stack with Docker + Consul (default)
 docker compose up --build
+
+# Full stack with Docker + etcd (alternative service discovery)
+docker compose -f docker-compose.etcd.yml up --build
 
 # Rebuild a single service
 docker compose build api-gateway && docker compose up
 ```
 
 The Docker builds run `bun install --frozen-lockfile`. After changing dependencies, commit the updated `bun.lock`, or the image build fails.
-
-`docker-compose.etcd.yml` has **not** been updated on this branch. It has no RabbitMQ and no saga-orchestrator, so the services exit at startup after failing to reach RabbitMQ 10 times. Use `docker-compose.yml` (Consul) for the full stack.
 
 To run services outside Docker, start only the infrastructure and point the services at `localhost`. `docker-compose.infra.yml` starts postgres, rabbitmq and consul. Use etcd for discovery, though: Consul health-checks `http://<SERVICE_ADDRESS>:<port>/health` from inside its container, where `localhost` is the container itself, so local instances never pass their checks.
 

@@ -348,7 +348,7 @@ stateDiagram-v2
 | Compose file | Registry | Containers |
 |---|---|---|
 | [`docker-compose.yml`](../docker-compose.yml) | Consul 1.15 dev agent on `:8500` (includes the UI) | postgres, rabbitmq (management UI on `:15672`), consul, api-gateway, saga-orchestrator, todo-service, user-service, notification-service, note-card-service-1, note-card-service-2, web |
-| [`docker-compose.etcd.yml`](../docker-compose.etcd.yml) | etcd on `:2379`, with `DISCOVERY_BACKEND=etcd` on every service | postgres, etcd and the services from `main`. Not updated on this branch yet: there's no RabbitMQ and no saga-orchestrator |
+| [`docker-compose.etcd.yml`](../docker-compose.etcd.yml) | etcd on `:2379`, with `DISCOVERY_BACKEND=etcd` on every service | The same, with etcd instead of consul |
 | [`docker-compose.infra.yml`](../docker-compose.infra.yml) | Consul | postgres, rabbitmq (`4.2-alpine`, without the management UI) and consul only, for running services locally with `bun run dev` |
 
 Each service registers under its `SERVICE_ADDRESS` (its compose service name), so the registry hands out hostnames on the Docker network. Every container also publishes its port on the host.
