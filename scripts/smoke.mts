@@ -4,10 +4,12 @@
 //   bun scripts/smoke.mts
 //
 // Env: GATEWAY_URL (default http://localhost:3000)
+//      WEB_URL: the web UI container (default http://localhost:8080)
 //      SMOKE_TIMEOUT_MS: how long to wait for services to register (default 180000)
 // Exits with status 1 if any check fails.
 
 const GW = process.env.GATEWAY_URL ?? 'http://localhost:3000';
+const WEB = process.env.WEB_URL ?? 'http://localhost:8080';
 const READY_TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 180_000);
 // Per-request limit: on some setups (e.g. WSL) a connection to a closed localhost
 // port hangs instead of being refused, so never wait on a single request for long.
@@ -91,7 +93,17 @@ for (const port of [3004, 3005]) {
   check(`note-card instance on :${port} responds`, res?.status === 200, `X-Served-By ${res?.headers.get('x-served-by')}`);
 }
 
-// --- 5. Cleanup ---
+// --- 5. Web UI ---
+// nginx serves the React bundle and proxies /api to the gateway on the same origin.
+
+const page = await fetch(WEB, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(() => null);
+const html = (await page?.text()) ?? '';
+check('web UI serves index.html', page?.status === 200 && html.includes('id="root"'), `status ${page?.status}`);
+
+const proxied = await fetch(`${WEB}/api/todos`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(() => null);
+check('web UI proxies /api to the gateway', proxied?.status === 200, `status ${proxied?.status}`);
+
+// --- 6. Cleanup ---
 
 check('DELETE /api/todos/:id', (await json(`/api/todos/${id}`, { method: 'DELETE' })).status === 200);
 check('deleted todo is 404', (await json(`/api/todos/${id}`)).status === 404);

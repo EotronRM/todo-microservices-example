@@ -4,7 +4,7 @@
 >
 > | Branch | Adds |
 > |---|---|
-> | `main` | HTTP microservices, PostgreSQL, client-side discovery with Consul or etcd |
+> | `main` | HTTP microservices, PostgreSQL, client-side discovery with Consul or etcd, React web UI |
 > | `feature/saga-pattern` | RabbitMQ, `saga-orchestrator`, orchestration and choreography sagas |
 > | `feature/kubernetes` | Kubernetes manifests and a DNS-based discovery backend |
 > | `feature/k8s-service-mesh` | Linkerd sidecars, mTLS, retry and timeout policies |
@@ -16,6 +16,8 @@ The diagrams are [Mermaid](https://mermaid.js.org/). GitHub renders them inline,
 ```mermaid
 flowchart LR
     client([Client])
+    browser([Browser])
+    web["web (nginx)<br/>:8080"]
 
     subgraph services["Application services"]
         gw["api-gateway<br/>:3000"]
@@ -29,6 +31,8 @@ flowchart LR
     pg[("PostgreSQL<br/>todos table")]
     reg{{"Service registry<br/>Consul :8500 or etcd :2379"}}
 
+    browser --> web
+    web -->|"/api/*"| gw
     client -->|"/api/*"| gw
     gw -->|"/todos"| todo
     gw -->|"/users/:id"| user
@@ -42,6 +46,7 @@ flowchart LR
 - Solid arrows are HTTP calls. Every service registers itself in the registry on startup, and every caller looks up a healthy instance before each call (dotted arrow).
 - `note-card-service` runs as two instances under one service name. Callers pick one of them at random.
 - `user-service` serves three hardcoded users, and `notification-service` only logs what it receives.
+- `web` is the React UI. nginx serves the bundle and proxies `/api/*` to the gateway on the same origin, because the gateway sends no CORS headers. It isn't registered in the registry.
 - `todo-service` creates the `todos` table (`id`, `title`, `completed`) on startup. It retries 5 times, 2s apart, while PostgreSQL starts.
 
 The gateway is the only entry point:
@@ -195,7 +200,7 @@ The serving instance's ID is drawn on the card. The gateway copies only `Content
 
 | Compose file | Registry | Containers |
 |---|---|---|
-| [`docker-compose.yml`](../docker-compose.yml) | Consul 1.15 dev agent on `:8500` (includes the UI) | postgres, consul, api-gateway, todo-service, user-service, notification-service, note-card-service-1, note-card-service-2 |
+| [`docker-compose.yml`](../docker-compose.yml) | Consul 1.15 dev agent on `:8500` (includes the UI) | postgres, consul, api-gateway, todo-service, user-service, notification-service, note-card-service-1, note-card-service-2, web |
 | [`docker-compose.etcd.yml`](../docker-compose.etcd.yml) | etcd on `:2379`, with `DISCOVERY_BACKEND=etcd` on every service | The same, with etcd instead of consul |
 
 Each service registers under its `SERVICE_ADDRESS` (its compose service name), so the registry hands out hostnames on the Docker network. Every container also publishes its port on the host.

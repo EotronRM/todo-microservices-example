@@ -22,7 +22,7 @@ docker compose up --build
 docker compose -f docker-compose.etcd.yml up --build
 ```
 
-Once running, the API gateway is available at `http://localhost:3000`.
+Once running, the API gateway is available at `http://localhost:3000` and the web UI at `http://localhost:8080`.
 
 ### Smoke test
 
@@ -62,6 +62,8 @@ curl http://localhost:3000/api/note-card/1 --output card.png
 ## Architecture
 
 ```
+Browser -> web:8080 (nginx) -> api-gateway:3000
+
 Client -> api-gateway:3000 -> [Service Discovery] -> todo-service:3001 (PostgreSQL)
                                                    -> user-service:3002
                                                    -> note-card-service:3004/3005 (2 instances)
@@ -79,6 +81,7 @@ note-card-service -> [Service Discovery] -> todo-service (fetches todo to render
 | user-service | 3002 | Serves hardcoded user data |
 | notification-service | 3003 | Receives and logs notifications |
 | note-card-service | 3004, 3005 | Generates PNG note card images (2 instances) |
+| web | 8080 | React + Tailwind UI. nginx serves it and proxies `/api` to the gateway |
 
 ### Infrastructure
 
@@ -111,6 +114,16 @@ bun run start
 
 Repeat for each service you want to run.
 
+### Web UI
+
+`web/` is a Vite + React + Tailwind app for listing, creating and deleting todos and viewing their note cards. Its dev server proxies `/api` to the gateway on `localhost:3000`, so start the stack first.
+
+```bash
+cd web && bun install
+bun run dev      # http://localhost:5173
+bun run build    # type-check and bundle to web/dist/
+```
+
 ### Environment Variables
 
 | Variable | Used by | Default | Purpose |
@@ -123,6 +136,7 @@ Repeat for each service you want to run.
 | `DATABASE_URL` | todo-service | — | PostgreSQL connection string |
 | `PORT` | note-card-service | `3004` | HTTP port |
 | `INSTANCE_ID` | note-card-service | — | Instance identifier shown on generated cards |
+| `API_GATEWAY_URL` | web | `http://api-gateway:3000` | Where nginx proxies `/api/` |
 
 ## Rebuilding a Single Service
 

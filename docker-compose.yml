@@ -91,3 +91,12 @@ services:
       - INSTANCE_ID=2
     depends_on:
       - consul
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api-gateway
