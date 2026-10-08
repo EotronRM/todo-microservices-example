@@ -1,0 +1,16 @@
+# The nginx image fills in ${API_GATEWAY_URL} at startup (envsubst on
+# /etc/nginx/templates/*.template). Only variables set in the environment are
+# replaced, so nginx's own variables like $uri are left alone.
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+
+    # Same-origin proxy: the gateway sends no CORS headers
+    location /api/ {
+        proxy_pass ${API_GATEWAY_URL};
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}

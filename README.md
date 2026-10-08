@@ -136,6 +136,7 @@ bun run build    # type-check and bundle to web/dist/
 | `DATABASE_URL` | todo-service | — | PostgreSQL connection string |
 | `PORT` | note-card-service | `3004` | HTTP port |
 | `INSTANCE_ID` | note-card-service | — | Instance identifier shown on generated cards |
+| `API_GATEWAY_URL` | web | `http://api-gateway:3000` | Where nginx proxies `/api/` |
 
 ## Rebuilding a Single Service
 
