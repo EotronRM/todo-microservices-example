@@ -81,6 +81,7 @@ kubectl apply -f k8s/notification-service.yaml
 kubectl apply -f k8s/note-card-service.yaml
 kubectl apply -f k8s/saga-orchestrator.yaml
 kubectl apply -f k8s/api-gateway.yaml
+kubectl apply -f k8s/web.yaml
 ```
 
 Verify all pods are running:
@@ -93,6 +94,12 @@ Get the API gateway URL:
 
 ```bash
 minikube service api-gateway -n todo-app --url
+```
+
+Get the web UI URL (its nginx proxies `/api/` to the gateway, so it exercises the same meshed calls):
+
+```bash
+minikube service web -n todo-app --url
 ```
 
 Test that the services are responding:
@@ -233,6 +240,7 @@ kubectl apply -f k8s/notification-service.yaml
 kubectl apply -f k8s/note-card-service.yaml
 kubectl apply -f k8s/saga-orchestrator.yaml
 kubectl apply -f k8s/api-gateway.yaml
+kubectl apply -f k8s/web.yaml
 
 # 3. Install Linkerd
 curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install | sh
