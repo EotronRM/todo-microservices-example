@@ -3,6 +3,7 @@
 ### ========================================
 ### Choreography Saga: "Assign & Notify"
 ### ========================================
+### Run the requests in order: each POST saves the todoId the next requests use.
 
 ### Step 1: Create a todo first
 POST {{baseUrl}}/api/todos
@@ -12,10 +13,12 @@ Content-Type: application/json
   "title": "Complete the choreography saga demo"
 }
 
+> {% client.global.set("todoId", response.body.id); %}
+
 ### Step 2 (Happy path): Assign todo to a valid user
 ### This triggers the event chain:
 ###   TodoAssignmentRequested -> UserValidated -> TodoAssignmentConfirmed -> NotificationSent
-PUT {{baseUrl}}/api/todos/1/assign
+PUT {{baseUrl}}/api/todos/{{todoId}}/assign
 Content-Type: application/json
 
 {
@@ -23,7 +26,7 @@ Content-Type: application/json
 }
 
 ### Step 3: Check the todo — status should be "assigned", user_id should be 1
-GET {{baseUrl}}/api/todos/1
+GET {{baseUrl}}/api/todos/{{todoId}}
 
 ### ========================================
 ### Compensation path: Invalid user
@@ -37,9 +40,11 @@ Content-Type: application/json
   "title": "This assignment will fail"
 }
 
+> {% client.global.set("todoId", response.body.id); %}
+
 ### Assign to a non-existent user
 ### This triggers: TodoAssignmentRequested -> UserValidationFailed -> TodoAssignmentRolledBack
-PUT {{baseUrl}}/api/todos/2/assign
+PUT {{baseUrl}}/api/todos/{{todoId}}/assign
 Content-Type: application/json
 
 {
@@ -47,4 +52,4 @@ Content-Type: application/json
 }
 
 ### Check the todo — status should be "assignment_failed", user_id should be null
-GET {{baseUrl}}/api/todos/2
+GET {{baseUrl}}/api/todos/{{todoId}}

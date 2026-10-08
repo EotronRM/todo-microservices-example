@@ -3,6 +3,7 @@
 ### ========================================
 ### Orchestration Saga: "Create Full Todo"
 ### ========================================
+### Run the requests in order: each one saves the sagaId / todoId the next one uses.
 
 ### Happy path: Create a full todo (valid user)
 ### This triggers: create todo -> validate user -> send notification -> generate note card
@@ -14,8 +15,15 @@ Content-Type: application/json
   "userId": 1
 }
 
-### Check saga status (replace with your sagaId)
-GET {{baseUrl}}/api/saga/status/<sagaId>
+> {% client.global.set("sagaId", response.body.sagaId); %}
+
+### Check saga status — should show COMPLETED
+GET {{baseUrl}}/api/saga/status/{{sagaId}}
+
+> {% client.global.set("todoId", response.body.todoId); %}
+
+### Check the todo — user_id should be 1, status should be "assigned"
+GET {{baseUrl}}/api/todos/{{todoId}}
 
 ### ========================================
 ### Compensation path: Invalid user
@@ -30,8 +38,12 @@ Content-Type: application/json
   "userId": 999
 }
 
-### Check saga status — should show FAILED after compensation
-GET {{baseUrl}}/api/saga/status/<sagaId>
+> {% client.global.set("sagaId", response.body.sagaId); %}
 
-### Verify the todo was deleted (compensation worked)
-GET {{baseUrl}}/api/todos
+### Check saga status — should show FAILED after compensation
+GET {{baseUrl}}/api/saga/status/{{sagaId}}
+
+> {% client.global.set("todoId", response.body.todoId); %}
+
+### Verify the todo was deleted (compensation worked) — should be 404
+GET {{baseUrl}}/api/todos/{{todoId}}

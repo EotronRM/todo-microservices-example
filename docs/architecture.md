@@ -254,7 +254,7 @@ sequenceDiagram
     O-)T: cmd.todo.create
     O-->>G: 202 {sagaId, status}
     G-->>C: 202 {sagaId, status}
-    Note over T: INSERT INTO todos
+    Note over T: INSERT INTO todos (user_id, status = 'assigned')
     T-)O: cmd.todo.create.reply {todoId}
     O-)U: cmd.user.validate
     U-)O: cmd.user.validate.reply
@@ -334,7 +334,8 @@ The saga's state is the todo's `status` column:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> unassigned: todo created
+    [*] --> unassigned: POST /todos
+    [*] --> assigned: cmd.todo.create (orchestration saga)
     unassigned --> assigning: PUT assign
     assigning --> assigned: user.validated
     assigning --> assignment_failed: user.validation.failed
@@ -343,7 +344,7 @@ stateDiagram-v2
 ```
 
 - The assign handler doesn't check the current status, so a todo can be reassigned from any state.
-- Todos created by the orchestration saga also start as `unassigned`. That saga validates the user but doesn't store `user_id`.
+- The orchestration saga inserts its todo with `user_id` set and `status = 'assigned'` before validating the user. If the user doesn't exist, compensation deletes the todo, so it shows as `assigned` only until `cmd.todo.delete` is handled.
 
 ## Running the stack
 

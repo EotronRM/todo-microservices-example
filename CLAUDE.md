@@ -49,7 +49,7 @@ cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost bun run dev
 
 The web UI (`web/`) is a Vite + React + Tailwind app. `cd web && bun run dev` serves it on `:5173` and proxies `/api` to the gateway on `localhost:3000`. `bun run build` type-checks with `tsc` and bundles to `web/dist/`. Don't scaffold or extend it with tools that import the `typescript` package (see TypeScript 7 below).
 
-No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway and the `web` container against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`). On this branch the smoke script also runs both sagas, including their failure paths, and `saga-orchestration.http` and `saga-choreography.http` cover them for manual testing.
+No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway and the `web` container against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`). On this branch the smoke script also runs both sagas, including their failure paths, and `saga-orchestration.http` and `saga-choreography.http` cover them for manual testing. Their response handlers (`> {% client.global.set(...) %}`) save the `sagaId` and `todoId` for the requests that follow, so run each file's requests in order.
 
 ## Architecture
 
@@ -104,7 +104,7 @@ Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
 
 Two saga implementations, side by side for comparison:
 
-- **Orchestration ("Create Full Todo")**: `saga-orchestrator` sends commands (`cmd.*`) through the `saga.orchestration` direct exchange, and services publish `*.reply` messages back. State lives in memory as a `SagaStep` enum, and a restart loses in-flight sagas. On failure the orchestrator publishes `cmd.todo.delete` as compensation and moves straight to `FAILED`. It doesn't wait for a reply, and `SagaStep.COMPENSATING` is never used. The state machine is a set of pure functions in `saga-orchestrator/src/orchestrator.ts`.
+- **Orchestration ("Create Full Todo")**: `saga-orchestrator` sends commands (`cmd.*`) through the `saga.orchestration` direct exchange, and services publish `*.reply` messages back. todo-service inserts the todo with `user_id` and `status = 'assigned'` before user-service validates the user. State lives in memory as a `SagaStep` enum, and a restart loses in-flight sagas. On failure the orchestrator publishes `cmd.todo.delete` as compensation and moves straight to `FAILED`. It doesn't wait for a reply, and `SagaStep.COMPENSATING` is never used. The state machine is a set of pure functions in `saga-orchestrator/src/orchestrator.ts`.
 - **Choreography ("Assign & Notify")**: services publish and consume past-tense events through the `saga.choreography` topic exchange. `PUT /todos/:id/assign` starts the chain. The state is implicit in the todo's `status` column: `unassigned` → `assigning` → `assigned` / `assignment_failed`.
 
 How the messaging is wired:

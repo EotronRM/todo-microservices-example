@@ -101,7 +101,9 @@ const ok = await json('/api/saga/create-full-todo', { method: 'POST', body: JSON
 check('POST /api/saga/create-full-todo is accepted', ok.status === 202 && Boolean(ok.body?.sagaId), `status ${ok.status}`);
 const okState = await poll(() => json(`/api/saga/status/${ok.body?.sagaId}`), isDone, 30_000);
 check('saga for user 1 reaches COMPLETED', okState.body?.step === 'COMPLETED', `step ${okState.body?.step}`);
-check('saga-created todo exists', (await json(`/api/todos/${okState.body?.todoId}`)).status === 200);
+const sagaTodo = await json(`/api/todos/${okState.body?.todoId}`);
+check('saga-created todo exists', sagaTodo.status === 200);
+check('saga-created todo is assigned to user 1', sagaTodo.body?.user_id === 1 && sagaTodo.body?.status === 'assigned', `user_id ${sagaTodo.body?.user_id}, status ${sagaTodo.body?.status}`);
 await json(`/api/todos/${okState.body?.todoId}`, { method: 'DELETE' });
 
 const bad = await json('/api/saga/create-full-todo', { method: 'POST', body: JSON.stringify({ title: 'Saga compensation', userId: 999 }) });

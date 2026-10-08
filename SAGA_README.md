@@ -32,6 +32,9 @@ curl -X POST http://localhost:3000/api/saga/create-full-todo \
 # Check status
 curl http://localhost:3000/api/saga/status/<sagaId>
 
+# The todo it created (todoId from the status) has user_id = 1 and status "assigned"
+curl http://localhost:3000/api/todos/<todoId>
+
 # Test compensation (invalid user)
 curl -X POST http://localhost:3000/api/saga/create-full-todo \
   -H "Content-Type: application/json" \

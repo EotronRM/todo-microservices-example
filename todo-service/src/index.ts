@@ -172,7 +172,8 @@ app.delete('/todos/:id', async (req, res) => {
 // Runs at startup and again after every reconnect (see startRabbit)
 async function attachConsumers(channel: AMQPChannel) {
 
-  // Handle: create a todo (orchestration command)
+  // Handle: create a todo assigned to cmd.userId (orchestration command).
+  // The user is validated in the next step; if that fails, cmd.todo.delete removes the todo.
   await consumeQueue(
     channel,
     `saga.${ORK.CMD_TODO_CREATE}`,
@@ -180,8 +181,8 @@ async function attachConsumers(channel: AMQPChannel) {
       console.log(`[SAGA-CMD] Creating todo for saga ${cmd.sagaId}`);
       try {
         const result = await pool.query(
-          'INSERT INTO todos (title, completed) VALUES ($1, false) RETURNING *',
-          [cmd.title]
+          'INSERT INTO todos (title, completed, user_id, status) VALUES ($1, false, $2, $3) RETURNING *',
+          [cmd.title, cmd.userId, 'assigned']
         );
         const todo = result.rows[0];
         publishMessage(channel, ORCHESTRATION_EXCHANGE, ORK.CMD_TODO_CREATE_REPLY, {
