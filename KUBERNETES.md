@@ -25,6 +25,9 @@ kubectl apply -f k8s/
 
 # Get the API gateway URL
 minikube service api-gateway -n todo-app --url
+
+# Get the web UI URL
+minikube service web -n todo-app --url
 ```
 
 ## How It Works
@@ -38,6 +41,10 @@ K8s Service (port 80) → Pod (containerPort 3001)
 ```
 
 Application code just calls `http://todo-service/todos` -- no port, no discovery lookup. The `shared/kubernetes.ts` backend is effectively a no-op: registration and deregistration are handled automatically by Kubernetes Endpoints.
+
+### Web UI
+
+The `web` pod runs the same nginx image as in Docker Compose. nginx proxies `/api/` to the gateway, and `k8s/web.yaml` sets `API_GATEWAY_URL=http://api-gateway` because the gateway's Service listens on port 80 rather than the container's 3000. Like the gateway, `web` has a NodePort Service, so `minikube service web -n todo-app --url` opens it from the host.
 
 ### Manifests
 
@@ -54,10 +61,11 @@ All manifests live in `k8s/` and deploy to the `todo-app` namespace:
 | `notification-service.yaml` | Deployment + Service |
 | `note-card-service.yaml` | Deployment (2 replicas) + Service |
 | `saga-orchestrator.yaml` | Deployment + Service |
+| `web.yaml` | Deployment + NodePort Service (exposed on port 30080) |
 
 ### Health Checks
 
-Every service has Kubernetes liveness and readiness probes configured against its `/health` endpoint. Kubernetes automatically removes unhealthy pods from the Service endpoints.
+Every service has Kubernetes liveness and readiness probes configured against its `/health` endpoint (`web` probes `/`, since nginx has no `/health`). Kubernetes automatically removes unhealthy pods from the Service endpoints.
 
 ## Common Commands
 

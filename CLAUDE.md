@@ -41,6 +41,7 @@ minikube start
 eval $(minikube docker-env) && docker compose build
 kubectl apply -f k8s/
 minikube service api-gateway -n todo-app --url
+minikube service web -n todo-app --url
 ```
 
 The manifests reference the images that `docker compose build` produces, named `todo-microservices-example-<service>:latest`, with `imagePullPolicy: Never`. That prefix is the Compose project name, which defaults to the directory name. If the repo is cloned under another name, build with `COMPOSE_PROJECT_NAME=todo-microservices-example`, or the pods can't find their images. note-card-service uses the `todo-microservices-example-note-card-service-1` image.
@@ -112,11 +113,12 @@ Consul and etcd deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`. In `
 ### Kubernetes deployment (`k8s/`)
 
 - Everything runs in the `todo-app` namespace (`00-namespace.yaml` sorts first, so `kubectl apply -f k8s/` creates it before the rest).
-- Each application is a Deployment plus a ClusterIP Service that maps port `80` to the container port, which is why the backend returns port `80`. Only api-gateway is exposed outside the cluster (NodePort `30000`).
+- Each application is a Deployment plus a ClusterIP Service that maps port `80` to the container port, which is why the backend returns port `80`. Only api-gateway (NodePort `30000`) and web (NodePort `30080`) are exposed outside the cluster.
 - note-card-service is a single Deployment with `replicas: 2`. `INSTANCE_ID` isn't set in its manifest, so both pods draw "instance 1" on the card.
-- Application pods have liveness (every 10s) and readiness (every 5s) probes on `/health`. postgres (with a 1Gi PersistentVolumeClaim) and rabbitmq (`rabbitmq:4-management-alpine`) have no probes.
+- Application pods have liveness (every 10s) and readiness (every 5s) probes on `/health` (`web` probes `/`). postgres (with a 1Gi PersistentVolumeClaim) and rabbitmq (`rabbitmq:4-management-alpine`) have no probes.
 - Nothing orders startup. A service whose PostgreSQL or RabbitMQ retries run out exits, and Kubernetes restarts it, so a few restarts right after `kubectl apply` are expected.
 - There's no Consul or etcd in the cluster. The manifests set `DISCOVERY_BACKEND=kubernetes`.
+- `k8s/web.yaml` sets `API_GATEWAY_URL=http://api-gateway`: the gateway's Service listens on `80`, not the `3000` that `web/Dockerfile` defaults to for compose.
 - RabbitMQ management UI: `kubectl port-forward svc/rabbitmq -n todo-app 15672:15672`, then open http://localhost:15672 (guest/guest).
 
 ### Saga Pattern (RabbitMQ)

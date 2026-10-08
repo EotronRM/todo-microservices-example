@@ -398,9 +398,11 @@ The manifests in [`k8s/`](../k8s/) deploy everything into the `todo-app` namespa
 ```mermaid
 flowchart LR
     client([Client]) -->|"minikube IP :30000"| gw
+    browser([Browser]) -->|"minikube IP :30080"| web
 
     subgraph ns["namespace todo-app"]
         gw["api-gateway<br/>NodePort 30000 → :3000"]
+        web["web (nginx)<br/>NodePort 30080 → :80"]
         orch["saga-orchestrator<br/>:80 → :3010"]
         todo["todo-service<br/>:80 → :3001"]
         user["user-service<br/>:80 → :3002"]
@@ -410,6 +412,7 @@ flowchart LR
         mq[["rabbitmq<br/>:5672, :15672"]]
     end
 
+    web -->|"/api/* via :80"| gw
     gw --> todo & user & nc & orch
     todo --> notif
     nc --> todo
@@ -417,8 +420,8 @@ flowchart LR
     orch & todo & user & notif & nc <==>|AMQP| mq
 ```
 
-- Each box is a Deployment plus a Service. Application Services map port `80` to the container port, which is why `discoverService()` returns port `80`. Only the gateway is reachable from outside the cluster.
-- Every application pod has a liveness probe (every 10s) and a readiness probe (every 5s) on `/health`. postgres and rabbitmq have no probes.
+- Each box is a Deployment plus a Service. Application Services map port `80` to the container port, which is why `discoverService()` returns port `80`. Only the gateway and `web` are reachable from outside the cluster. `web` sets `API_GATEWAY_URL=http://api-gateway`, because the gateway's Service listens on `80`.
+- Every application pod has a liveness probe (every 10s) and a readiness probe (every 5s) on `/health` (`web` probes `/`). postgres and rabbitmq have no probes.
 - Images come from `docker compose build` run against minikube's Docker daemon (`imagePullPolicy: Never`). There's no Consul or etcd in the cluster.
 - `INSTANCE_ID` isn't set in `note-card-service.yaml`, so both replicas draw "instance 1" on the card.
 
@@ -428,5 +431,5 @@ flowchart LR
 | Health | Consul HTTP check or etcd lease | Liveness and readiness probes |
 | Two note-card instances | Two compose services, each with its own port | One Deployment with `replicas: 2` |
 | Load balancing | Random pick in the caller | kube-proxy, per connection |
-| Reachable from the host | Every service | Only api-gateway (NodePort `30000`) |
+| Reachable from the host | Every service | Only api-gateway (NodePort `30000`) and web (NodePort `30080`) |
 | PostgreSQL data | No named volume | PersistentVolumeClaim (`1Gi`) |

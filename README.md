@@ -26,7 +26,7 @@ docker compose -f docker-compose.etcd.yml up --build
 
 See [KUBERNETES.md](KUBERNETES.md) for full setup with minikube.
 
-Once running, the API gateway is available at `http://localhost:3000` (Docker) or the URL returned by minikube, and the web UI at `http://localhost:8080` (Docker).
+Once running, the API gateway is available at `http://localhost:3000` (Docker) or the URL returned by minikube, and the web UI at `http://localhost:8080` (Docker) or the URL from `minikube service web -n todo-app --url`.
 
 ### Smoke test
 
