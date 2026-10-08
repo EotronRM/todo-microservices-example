@@ -48,13 +48,17 @@ docker compose -f docker-compose.etcd.yml up -d postgres etcd
 cd todo-service && DISCOVERY_BACKEND=etcd SERVICE_ADDRESS=localhost bun run dev
 ```
 
-No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`).
+The web UI (`web/`) is a Vite + React + Tailwind app. `cd web && bun run dev` serves it on `:5173` and proxies `/api` to the gateway on `localhost:3000`. `bun run build` type-checks with `tsc` and bundles to `web/dist/`. Don't scaffold or extend it with tools that import the `typescript` package (see TypeScript 7 below).
+
+No test framework is configured. `bun scripts/smoke.mts` runs end-to-end checks through the gateway and the `web` container against a running stack (start it with `docker compose up -d --build` first). It waits up to 3 minutes for every service to register, and exits non-zero if any check fails. When a branch adds features, extend the script on that branch. To exercise the API by hand, use the request files in `http/` (JetBrains HTTP Client format, `@baseUrl = http://localhost:3000`).
 
 ## Architecture
 
-Five Express 5 microservices + a shared utility module + PostgreSQL, run with Docker Compose and pluggable service discovery (Consul or etcd). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`.
+Five Express 5 microservices + a shared utility module + PostgreSQL + a React web UI, run with Docker Compose and pluggable service discovery (Consul or etcd). The note-card-service runs 2 instances to demonstrate load distribution. Mermaid diagrams of everything below are in `docs/architecture.md`.
 
 ```
+Browser -> web:8080 (nginx) -> api-gateway:3000
+
 Client -> api-gateway:3000 -> [Consul|etcd] -> todo-service:3001 (PostgreSQL-backed)
                                             -> user-service:3002
                                             -> note-card-service:3004/3005 (2 instances)
@@ -72,8 +76,9 @@ note-card-service -> [Consul|etcd] -> todo-service (fetches todo to render as PN
 | user-service | 3002 | Serves three hardcoded users at `/users/:id` |
 | notification-service | 3003 | Receives notifications at `POST /notify` and logs them |
 | note-card-service | 3004, 3005 | Generates PNG note card images at `/note-card/:todoId` via sharp+SVG. Runs 2 instances for the load distribution demo |
+| web | 8080 | React + Tailwind UI: list, create and delete todos and view their note cards. nginx serves it and proxies `/api/` to the gateway, because the gateway sends no CORS headers. Not registered in discovery |
 
-All services expose `/health` for liveness checks (`shared/healthcheck.ts`).
+All services except `web` expose `/health` for liveness checks (`shared/healthcheck.ts`).
 
 **Shared module** (`shared/`): `consul.ts`, `etcd.ts`, `discovery.ts` (adapter that picks the backend from `DISCOVERY_BACKEND` with a top-level `await import()`), `healthcheck.ts` (health route factory) and `tsconfig.base.json`. Services import from `discovery.js`, never from a backend directly. It isn't an installable package: each service's `tsc` compiles it inline.
 
@@ -97,7 +102,7 @@ Both backends deregister on SIGINT/SIGTERM via `setupGracefulShutdown()`.
 - **ESM + TypeScript 7**: All services use `"type": "module"` with `module: "nodenext"`. Relative imports require `.js` extensions even in `.ts` files.
 - **TypeScript 7 toolchain**: `tsc` is the native Go compiler (`typescript@7`). It ships no `tsserver` and, in 7.0, no programmatic API, so tools that import the `typescript` package (ts-jest, typescript-eslint, and similar) won't work with it yet. `tsx` is unaffected because it transpiles with esbuild.
 - **Shared code compilation**: Each service's `tsconfig.json` sets `rootDir: ".."` and includes `"../shared/**/*"`. Output lands in `dist/shared/` and `dist/<service>/src/`.
-- **Dockerfiles**: multi-stage. The `oven/bun:1-alpine` stage copies `shared/` and the service into `/app` to mirror the repo layout, runs `bun install --frozen-lockfile` for the service only, symlinks the service's `node_modules` to `/app/node_modules` so `shared/` resolves its imports from there, and runs `bunx tsc`. The `node:20-alpine` runtime stage copies only `dist/` and `node_modules/`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card runtime image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`.
+- **Dockerfiles**: multi-stage. The `oven/bun:1-alpine` stage copies `shared/` and the service into `/app` to mirror the repo layout, runs `bun install --frozen-lockfile` for the service only, symlinks the service's `node_modules` to `/app/node_modules` so `shared/` resolves its imports from there, and runs `bunx tsc`. The `node:20-alpine` runtime stage copies only `dist/` and `node_modules/`. `.dockerignore` keeps host `node_modules/` and `dist/` out of the build context. The note-card runtime image also installs `fontconfig` and `ttf-dejavu` so librsvg can render SVG `<text>`. `web/Dockerfile` differs: it copies only `web/`, runs `bun run build` (tsc + Vite), and its `nginx:1-alpine` runtime stage serves `dist/` with `web/nginx.conf`.
 - **Multi-instance**: note-card-service runs 2 instances (ports 3004, 3005) under the same service name with different IDs (`note-card-service-3004`, `note-card-service-3005`). The `INSTANCE_ID` env var is drawn on the card and sent in the `X-Served-By` header. The gateway only forwards `Content-Type`, so that header is visible only when calling an instance directly.
 - **Database**: todo-service uses PostgreSQL via the `pg` package with the `DATABASE_URL` env var. It creates the `todos` table (`id`, `title`, `completed`) on startup, retrying 5 times 2s apart while the container starts.
 - **Express CJS interop**: Express 5 is still CJS. `esModuleInterop: true` and `verbatimModuleSyntax: false` in the base tsconfig enable `import express from 'express'` under nodenext.
